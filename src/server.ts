@@ -1,0 +1,184 @@
+import { toBoolean } from './helpers/utils/to-boolean.js';
+import { getNodeEnv } from './helpers/utils/node/index.js';
+import type { TerminusOptions } from '@godaddy/terminus';
+import { createTerminus } from '@godaddy/terminus';
+import type { Request } from 'express';
+import * as http from 'http';
+import * as https from 'https';
+import { once } from 'lodash-es';
+import qs from 'qs';
+import url from 'url';
+import createApp from './app.js';
+import getDatabase from './database/index.js';
+import emitter from './emitter.js';
+import { useLogger } from './helpers/logger/index.js';
+import { getConfigFromEnv } from './helpers/utils/get-config-from-env.js';
+import { getIPFromReq } from './helpers/utils/get-ip-from-req.js';
+import {
+	createSubscriptionController,
+	createWebSocketController,
+	getSubscriptionController,
+	getWebSocketController,
+} from './websocket/controllers/index.js';
+import { startWebSocketHandlers } from './websocket/handlers/index.js';
+import { useEnv } from './helpers/env/index.js';
+
+export let SERVER_ONLINE = true;
+
+const env = useEnv();
+
+const logger = useLogger();
+
+export async function createServer(): Promise<http.Server> {
+	const server = http.createServer(await createApp());
+
+	Object.assign(server, getConfigFromEnv('SERVER_'));
+
+	server.on('request', function (req: http.IncomingMessage & Request, res: http.ServerResponse) {
+		const startTime = process.hrtime();
+
+		const complete = once(function (finished: boolean) {
+			const elapsedTime = process.hrtime(startTime);
+			const elapsedNanoseconds = elapsedTime[0] * 1e9 + elapsedTime[1];
+			const elapsedMilliseconds = elapsedNanoseconds / 1e6;
+
+			const previousIn = (req.socket as any)._metrics?.in || 0;
+			const previousOut = (req.socket as any)._metrics?.out || 0;
+
+			const metrics = {
+				in: req.socket.bytesRead - previousIn,
+				out: req.socket.bytesWritten - previousOut,
+			};
+
+			(req.socket as any)._metrics = {
+				in: req.socket.bytesRead,
+				out: req.socket.bytesWritten,
+			};
+
+			// Compatibility when supporting serving with certificates
+			const protocol = server instanceof https.Server ? 'https' : 'http';
+
+			// Rely on url.parse for path extraction
+			// Doesn't break on illegal URLs
+			const urlInfo = url.parse(req.originalUrl || req.url);
+
+			const info = {
+				finished,
+				request: {
+					aborted: req.aborted,
+					completed: req.complete,
+					method: req.method,
+					url: urlInfo.href,
+					path: urlInfo.pathname,
+					protocol,
+					host: req.headers.host,
+					size: metrics.in,
+					query: urlInfo.query ? qs.parse(urlInfo.query) : {},
+					headers: req.headers,
+				},
+				response: {
+					status: res.statusCode,
+					size: metrics.out,
+					headers: res.getHeaders(),
+				},
+				ip: getIPFromReq(req),
+				duration: elapsedMilliseconds.toFixed(),
+			};
+
+			emitter.emitAction('response', info, {
+				database: getDatabase(),
+				schema: req.schema,
+				accountability: req.accountability ?? null,
+			});
+		});
+
+		res.once('finish', complete.bind(null, true));
+		res.once('close', complete.bind(null, false));
+	});
+
+	if (toBoolean(env['WEBSOCKETS_ENABLED']) === true) {
+		createSubscriptionController(server);
+		createWebSocketController(server);
+		startWebSocketHandlers();
+	}
+
+	const terminusOptions: TerminusOptions = {
+		timeout:
+			(env['SERVER_SHUTDOWN_TIMEOUT'] as number) >= 0 && (env['SERVER_SHUTDOWN_TIMEOUT'] as number) < Infinity
+				? (env['SERVER_SHUTDOWN_TIMEOUT'] as number)
+				: 1000,
+		signals: ['SIGINT', 'SIGTERM', 'SIGHUP'],
+		beforeShutdown,
+		onSignal,
+		onShutdown,
+	};
+
+	createTerminus(server, terminusOptions);
+
+	return server;
+
+	async function beforeShutdown() {
+		if (getNodeEnv() !== 'development') {
+			logger.info('Shutting down...');
+		}
+
+		SERVER_ONLINE = false;
+	}
+
+	async function onSignal() {
+		getSubscriptionController()?.terminate();
+		getWebSocketController()?.terminate();
+
+		const database = getDatabase();
+		await database.destroy();
+
+		logger.info('Database connections destroyed');
+	}
+
+	async function onShutdown() {
+		emitter.emitAction(
+			'server.stop',
+			{ server },
+			{
+				database: getDatabase(),
+				schema: null,
+				accountability: null,
+			},
+		);
+
+		if (getNodeEnv() !== 'development') {
+			logger.info('YP shut down OK. Bye bye!');
+		}
+	}
+}
+
+export async function startServer(): Promise<void> {
+	const server = await createServer();
+	const host = env['HOST'] as string;
+	const port = parseInt(env['PORT'] as string);
+
+	server
+		.listen(port, host, () => {
+			logger.info(`Server started at http://${host}:${port}`);
+
+			process.send?.('ready');
+
+			emitter.emitAction(
+				'server.start',
+				{ server },
+				{
+					database: getDatabase(),
+					schema: null,
+					accountability: null,
+				},
+			);
+		})
+		.once('error', (err: any) => {
+			if (err?.code === 'EADDRINUSE') {
+				logger.error(`Port ${port} is already in use`);
+				process.exit(1);
+			} else {
+				throw err;
+			}
+		});
+}

@@ -1,0 +1,38 @@
+{% layout "base" %} {% block content %}
+
+<h3 style='padding-bottom: 20px; color: rgba(156, 163, 175, 1)'>There is a new notification on {{ projectName }}</h3>
+
+<p style="padding-bottom: 30px">
+  {{ html }}
+</p>
+
+
+<a
+  class="button"
+  rel="noopener"
+  target="_blank"
+  href="{{url}}"
+  style="
+    font-size: 16px;
+    font-weight: 600;
+    color: #ffffff;
+    text-decoration: none;
+    display: inline-block;
+    padding: 11px 24px;
+    border-radius: 8px;
+    background: #171717;
+    border: 1px solid #ffffff;
+  "
+>
+  <!--[if mso]>
+    <i style="letter-spacing: 25px; mso-font-width: -100%; mso-text-raise: 30pt"
+      >&nbsp;</i
+    >
+  <![endif]-->
+  <span style="mso-text-raise: 15pt">View notification</span>
+  <!--[if mso]>
+    <i style="letter-spacing: 25px; mso-font-width: -100%">&nbsp;</i>
+  <![endif]-->
+</a>
+
+{% endblock %}

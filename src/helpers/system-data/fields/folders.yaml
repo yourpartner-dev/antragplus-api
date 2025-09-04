@@ -1,0 +1,31 @@
+fields:
+  - field: id
+    type: uuid
+    meta:
+      interface: input
+      readonly: true
+      hidden: true
+      width: full
+      options:
+        template: '{{$uuid}}'
+
+  - field: name
+    type: string
+    meta:
+      interface: input
+      width: full
+      options:
+        font: sans
+        iconLeft: folder
+
+  - field: parent
+    type: uuid
+    meta:
+      interface: select-dropdown-m2o
+      width: full
+      options:
+        template: '{{name}}'
+        enableCreate: true
+        enableSelect: true
+        fields:
+          - name 

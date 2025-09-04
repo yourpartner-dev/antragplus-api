@@ -1,0 +1,36 @@
+defaults:
+  collection: null
+  hidden: false
+  singleton: false
+  icon: null
+  note: null
+  translations: null
+  display_template: null
+  accountability: 'all'
+
+data:
+  - collection: yp_activity
+
+  - collection: yp_files
+
+  - collection: yp_migrations
+
+  - collection: yp_permissions 
+
+  - collection: yp_revisions
+
+  - collection: yp_roles
+
+  - collection: yp_sessions
+
+  - collection: yp_users
+
+  - collection: yp_notifications
+
+  - collection: yp_translations
+
+  - collection: yp_folders
+
+  - collection: yp_settings
+
+  - collection: yp_organizations

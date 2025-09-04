@@ -1,0 +1,5 @@
+- collection: yp_permissions
+  action: read
+  permissions:
+    role:
+      _eq: $CURRENT_ROLE

@@ -1,0 +1,30 @@
+table: yp_revisions
+
+columns:
+  id:
+    increments: true
+  activity:
+    type: integer
+    unsigned: true
+    nullable: false
+    references:
+      table: yp_activity
+      column: id
+  collection:
+    type: string
+    length: 64
+    nullable: false
+  item:
+    type: string
+    length: 255
+    nullable: false
+  data:
+    type: json
+  delta:
+    type: json
+  parent:
+    type: integer
+    unsigned: true
+    references:
+      table: yp_revisions
+      column: id

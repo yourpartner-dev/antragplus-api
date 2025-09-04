@@ -1,0 +1,57 @@
+table: yp_organizations
+
+columns:
+  id:
+    type: uuid
+    primary: true
+    nullable: false
+  name:
+    type: string
+    length: 100
+    nullable: false
+  company_name:
+    type: string
+    length: 100
+    nullable: true
+  billing_address:
+    type: text
+    nullable: true
+  domain_name:
+    type: string
+    length: 255
+    nullable: true
+  website_url:
+    type: string
+    length: 255
+    nullable: true
+  contact_email:
+    type: string
+    length: 255
+    nullable: true
+  contact_phone:
+    type: string
+    length: 50
+    nullable: true
+  contact_name:
+    type: string
+    length: 100
+    nullable: true
+  logo:
+    type: uuid
+    nullable: true
+  registration_number:
+    type: string
+    length: 50
+    nullable: true
+  status:
+    type: string
+    length: 20
+    nullable: false
+    default: 'active'
+  date_created:
+    type: timestamp
+    nullable: false
+  metadata:
+    type: jsonb
+    nullable: true
+      

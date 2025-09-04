@@ -1,0 +1,196 @@
+fields:
+  - field: id
+    type: integer
+    meta:
+      interface: input
+      readonly: true
+      hidden: true
+      width: full
+
+  - field: project_name
+    type: string
+    meta:
+      interface: input
+      width: full
+      options:
+        font: sans
+        iconLeft: business
+
+  - field: project_url
+    type: string
+    meta:
+      interface: input
+      width: full
+      options:
+        font: sans
+        iconLeft: link
+
+  - field: project_color
+    type: string
+    meta:
+      interface: color
+      width: half
+      options:
+        presetColors:
+          - '#00C897'
+          - '#FF5733'
+          - '#33A1FF'
+          - '#FF33A1'
+          - '#33FF57'
+
+  - field: project_logo
+    type: uuid
+    meta:
+      interface: file-image
+      width: half
+      options:
+        template: '{{file.filename}}'
+        enableCreate: true
+        enableSelect: true
+        fields:
+          - filename
+
+
+  - field: public_favicon
+    type: uuid
+    meta:
+      interface: file-image
+      width: half
+      options:
+        template: '{{file.filename}}'
+        enableCreate: true
+        enableSelect: true
+        fields:
+          - filename
+
+  - field: auth_login_attempts
+    type: integer
+    meta:
+      interface: input
+      width: half
+      options:
+        min: 1
+        max: 100
+        step: 1
+
+  - field: auth_password_policy
+    type: string
+    meta:
+      interface: input
+      width: half
+      options:
+        font: monospace
+        iconLeft: security
+
+  - field: public_registration
+    type: boolean
+    meta:
+      interface: boolean
+      width: half
+      options:
+        labelOn: 'Enabled'
+        labelOff: 'Disabled'
+
+  - field: public_registration_verify_email
+    type: boolean
+    meta:
+      interface: boolean
+      width: half
+      options:
+        labelOn: 'Required'
+        labelOff: 'Optional'
+
+  - field: public_registration_role
+    type: uuid
+    meta:
+      interface: select-dropdown-m2o
+      width: full
+      options:
+        template: '{{name}}'
+        enableCreate: true
+        enableSelect: true
+        fields:
+          - name
+
+  - field: public_registration_email_filter
+    type: json
+    meta:
+      interface: input-code
+      width: full
+      options:
+        language: json
+        lineNumbers: true
+
+  - field: storage_asset_transform
+    type: string
+    meta:
+      interface: select-dropdown
+      width: half
+      options:
+        choices:
+          - text: All
+            value: all
+          - text: None
+            value: none
+          - text: Presets Only
+            value: presets
+
+  - field: storage_asset_presets
+    type: json
+    meta:
+      interface: input-code
+      width: full
+      options:
+        language: json
+        lineNumbers: true
+
+  - field: storage_default_folder
+    type: uuid
+    meta:
+      interface: select-dropdown-m2o
+      width: full
+      options:
+        template: '{{name}}'
+        enableCreate: true
+        enableSelect: true
+        fields:
+          - name
+
+  - field: default_language
+    type: string
+    meta:
+      interface: select-dropdown
+      width: half
+      options:
+        choices:
+          - text: English (US)
+            value: en-US
+          - text: English (UK)
+            value: en-GB
+          - text: Spanish
+            value: es
+          - text: French
+            value: fr
+          - text: German
+            value: de
+
+  - field: project_from_email
+    type: string
+    meta:
+      interface: input
+      width: half
+      options:
+        font: sans
+        iconLeft: email
+
+  - field: organization_id
+    type: uuid
+    meta:
+      interface: select-dropdown-m2o
+      width: full
+      options:
+        template: '{{name}}'
+        enableCreate: true
+        enableSelect: true
+        fields:
+          - name 

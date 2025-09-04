@@ -1,0 +1,21 @@
+table: yp_translations
+
+columns:
+  id:
+    type: uuid
+    primary: true
+    nullable: false
+  language:
+    type: string
+    length: 10
+    nullable: false
+  key:
+    type: string
+    length: 255
+    nullable: false
+  value:
+    type: string
+    length: 255
+  timestamp:
+    type: timestamp
+    default: '$now'

@@ -1,0 +1,76 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+    description: Unique identifier for the organization.
+    example: '2f24211d-d928-469a-aea3-3c8f53d4e426'
+    readOnly: true
+  name:
+    type: string
+    nullable: true
+    description: Name of the organization.
+    example: 'Example Corp'
+  company_name:
+    type: string
+    nullable: true
+    description: Legal company name of the organization.
+    example: 'Example Corporation Ltd.'
+  billing_address:
+    type: string
+    nullable: true
+    description: Billing address of the organization.
+    example: '123 Main St, Anytown, AT 12345'
+  domain_name:
+    type: string
+    nullable: true
+    description: Primary domain name associated with the organization (e.g., for email matching or SSO).
+    example: 'example.com'
+  website_url:
+    type: string
+    format: url
+    nullable: true
+    description: Official website URL of the organization.
+    example: 'https://www.example.com'
+  contact_email:
+    type: string
+    format: email
+    nullable: true
+    description: Contact email address for the organization.
+    example: 'contact@example.com'
+  contact_phone:
+    type: string
+    nullable: true
+    description: Contact phone number for the organization.
+    example: '+1-555-123-4567'
+  contact_name:
+    type: string
+    nullable: true
+    description: Contact name for the organization.
+    example: 'John Doe'
+  logo:
+    description: Unique identifier for the organization's logo file.
+    nullable: true
+    oneOf:
+      - type: string
+        format: uuid
+        example: 'f1g2h3i4-j5k6-7890-1234-567890abcdef'
+      - $ref: '../openapi.yaml#/components/schemas/Files'
+  registration_number:
+    type: string
+    nullable: true
+    description: Official registration number of the organization.
+    example: 'HRB 12345'
+  date_created:
+    type: string
+    format: date-time
+    nullable: true
+    readOnly: true
+    description: Timestamp of when the organization record was created.
+    example: '2023-01-15T10:30:00Z'
+  metadata:
+    type: object
+    nullable: true
+    description: Additional custom metadata for the organization (JSONB).
+    additionalProperties: true
+    example: {"key": "value", "another_key": 123}

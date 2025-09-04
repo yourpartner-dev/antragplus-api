@@ -1,0 +1,10 @@
+# yp_migrations isn't surfaced in the app, nor accessible from the API
+table: yp_migrations
+
+fields:
+  - collection: yp_migrations
+    field: version
+  - collection: yp_migrations
+    field: name
+  - collection: yp_migrations
+    field: timestamp

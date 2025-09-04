@@ -1,0 +1,36 @@
+table: yp_notifications
+
+columns:
+  id:
+    type: uuid
+    primary: true
+    nullable: false
+  timestamp:
+    type: timestamp
+    default: '$now'
+  recipient:
+    type: uuid
+    references:
+      table: yp_users
+      column: id
+    nullable: false
+  sender:
+    type: uuid
+    references:
+      table: yp_users
+      column: id
+    nullable: true
+  subject:
+    type: string
+    length: 255
+    nullable: false
+  message:
+    type: text
+    nullable: false
+  collection:
+    type: string
+    length: 255
+    nullable: true
+  item:
+    type: string
+    length: 255

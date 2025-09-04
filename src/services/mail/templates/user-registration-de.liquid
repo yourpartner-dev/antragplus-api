@@ -1,0 +1,38 @@
+{% layout 'base' %} {% block content %}
+
+<h3 style='padding-bottom: 20px; color: rgba(156, 163, 175, 1)'>Fast geschafft – bestätigen Sie Ihre Anmeldung</h3>
+<p style="padding-bottom: 20px">Hallo {{ first_name }} {{ last_name }},</p>
+<p style='padding-bottom: 30px'>
+  Schön, dass Sie sich bei  <i>{{ projectName }}</i> registriert haben!
+  Um Ihren Account vollständig zu aktivieren, bestätigen Sie bitte kurz Ihre E-Mail-Adresse.
+</p>
+
+<a
+  class='button'
+  rel='noopener'
+  target='_blank'
+  href='{{url}}'
+  style='
+    font-size: 16px;
+    font-weight: 600;
+    color: #ffffff;
+    text-decoration: none;
+    display: inline-block;
+    padding: 11px 24px;
+    border-radius: 8px;
+    background: #171717;
+    border: 1px solid #ffffff;
+  '
+>
+  <!--[if mso]>
+    <i style="letter-spacing: 25px; mso-font-width: -100%; mso-text-raise: 30pt"
+      >&nbsp;</i
+    >
+  <![endif]-->
+  <span style='mso-text-raise: 15pt'> E-Mail bestätigen</span>
+  <!--[if mso]> <i style="letter-spacing: 25px; mso-font-width: -100%">&nbsp;</i> <![endif]-->
+</a>
+<p style='padding-top: 30px;font-weight:bold'>Warum ist die Bestätigung wichtig?</p>
+<p>Ihre Sicherheit ist uns wichtig – Mit der Bestätigung stellen wir sicher, dass Ihre Anmeldung echt ist und Ihre E-Mail-Adresse korrekt verwendet wird.</p>
+
+{% endblock %}

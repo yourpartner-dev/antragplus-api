@@ -1,0 +1,178 @@
+type: object
+properties:
+  id:
+    description: Unique identifier for the setting.
+    type: integer
+    example: 1
+    readOnly: true
+  project_name:
+    description: The name of the project.
+    type: string
+    example: YourPartner
+    default: YourPartner
+  project_url:
+    description: The url of the project.
+    type: string
+    example: "https://app.yourpartner.dev"
+    nullable: true
+  project_color:
+    description: The brand color of the project.
+    type: string
+    example: "#00C897"
+    nullable: true
+    default: "#00C897"
+  project_logo:
+    description: The logo of the project (UUID of a file).
+    nullable: true
+    oneOf:
+      - type: string
+        format: uuid
+        example: "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+      - $ref: "../openapi.yaml#/components/schemas/Files"
+  public_favicon:
+    description: The public favicon for the project (UUID of a file).
+    nullable: true
+    oneOf:
+      - type: string
+        format: uuid
+        example: "b2c3d4e5-f6g7-8901-2345-678901abcdef"
+      - $ref: "../openapi.yaml#/components/schemas/Files"
+  auth_login_attempts:
+    description: Allowed authentication login attempts before the user's status is set to blocked.
+    type: integer
+    example: 25
+    default: 25
+  auth_password_policy:
+    description: Authentication password policy (regex).
+    type: string
+    nullable: true
+    example: "/^.{8,}$/"
+    default: "/^.{8,}$/"
+  public_registration:
+    description: Enable or disable public user registration.
+    type: boolean
+    default: false
+  public_registration_verify_email:
+    description: Require email verification for public registrations.
+    type: boolean
+    default: true
+  public_registration_role:
+    description: The role of the user that is created during public registration.
+    nullable: true
+    oneOf:
+      - type: string
+        format: uuid
+        example: "c3d4e5f6-g7h8-9012-3456-789012abcdef"
+      - $ref: "../openapi.yaml#/components/schemas/Roles"
+  public_registration_email_filter:
+    description: The email filter for the public registration. Allows defining rules for email domains or specific emails.
+    type: object
+    nullable: true
+    additionalProperties: true
+    example:
+      allow: ["example.com", "yourpartner.dev"]
+      deny: ["tempmail.com"]
+  storage_asset_transform:
+    description: What transformations are allowed in the assets endpoint.
+    type: string
+    enum:
+      - all
+      - none
+      - presets
+    example: "all"
+    nullable: true
+    default: "all"
+  storage_asset_presets:
+    description: Array of allowed asset transformation presets.
+    type: array
+    nullable: true
+    items:
+      type: object
+      properties:
+        key:
+          description: Key for the asset. Used in the assets endpoint.
+          type: string
+        fit:
+          description: Whether to crop the thumbnail to match the size, or maintain the aspect ratio.
+          type: string
+          enum:
+            - cover
+            - contain
+            - inside
+            - outside
+        width:
+          description: Width of the thumbnail.
+          type: integer
+        height:
+          description: Height of the thumbnail.
+          type: integer
+        withoutEnlargement:
+          description: No image upscale.
+          type: boolean
+        quality:
+          description: Quality of the compression used.
+          type: integer
+        format:
+          description: Reformat output image.
+          type: string
+          enum:
+            - ""
+            - jpeg
+            - png
+            - webp
+            - tiff
+            - avif
+        transforms:
+          description: Additional transformations to apply.
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              method:
+                description: The Sharp method name.
+                type: string
+              arguments:
+                description: A list of arguments to pass to the Sharp method.
+                type: array
+                nullable: true
+                items:
+                  type: object
+                  properties:
+                    argument:
+                      description: A JSON representation of the argument value
+                      type: string
+    example:
+      - key: "thumbnail"
+        fit: "cover"
+        width: 100
+        height: 100
+        quality: 80
+  storage_default_folder:
+    description: The default folder (UUID) to place uploaded files in.
+    nullable: true
+    oneOf:
+      - type: string
+        format: uuid
+        example: "123e4567-e89b-12d3-a456-426614174000"
+      - $ref: "../openapi.yaml#/components/schemas/Folders"
+  default_language:
+    description: The default language of the project and each user.
+    type: string
+    example: "en-US"
+    default: "en-US"
+  project_from_email:
+    description: The from email of the project.
+    type: string
+    example: "noreply@yp.dev"
+    nullable: true
+  organization_id:
+    description: The organization these settings belong to (UUID of an organization).
+    nullable: true
+    oneOf:
+      - type: string
+        format: uuid
+        example: "123e4567-e89b-12d3-a456-426614174000"
+      - $ref: "../openapi.yaml#/components/schemas/Organizations"
+
+  

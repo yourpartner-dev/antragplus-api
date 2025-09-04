@@ -1,0 +1,65 @@
+table: yp_activity
+
+fields:
+  - field: id
+
+  - field: item
+
+  - field: action
+    display: labels
+    display_options:
+      choices:
+        - text: $t:field_options.yp_activity.create
+          value: create
+        - text: $t:field_options.yp_activity.update
+          value: update
+        - text: $t:field_options.yp_activity.delete
+          value: delete
+        - text: $t:field_options.yp_activity.login
+          value: login
+
+  - field: collection
+    display: collection
+
+  - field: timestamp
+    display: datetime
+    special:
+      - date-created
+      - cast-timestamp
+    options:
+      relative: true
+
+  - field: user
+    display: user
+
+  - field: comment
+    display: formatted-value
+
+
+  - field: user_agent
+    display: formatted-value
+    display_options:
+      font: monospace
+    width: half
+
+  - field: origin
+    display: formatted-value
+    display_options:
+      font: monospace
+    width: half
+
+  - field: ip
+    display: formatted-value
+    display_options:
+      font: monospace
+    width: half
+
+  - field: revisions
+    interface: list-o2m
+    special:
+      - o2m
+    options:
+      fields:
+        - collection
+        - item
+    width: half

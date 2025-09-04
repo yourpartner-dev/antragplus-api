@@ -1,0 +1,46 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+    description: Unique identifier for the translation
+
+  language:
+    type: string
+    description: Language code for the translation (e.g., en-US, de-DE)
+    pattern: '^[a-z]{2}-[A-Z]{2}$'
+    minLength: 5
+    maxLength: 5
+
+  key:
+    type: string
+    description: Translation key used to reference this translation
+    minLength: 1
+
+  value:
+    type: string
+    description: The translated text content
+    minLength: 1
+
+  namespace:
+    type: string
+    description: Optional namespace to group translations
+    default: ""
+
+  created_at:
+    type: string
+    format: date-time
+    description: Timestamp when the translation was created
+
+  updated_at:
+    type: string
+    format: date-time
+    description: Timestamp when the translation was last updated
+
+required:
+  - id
+  - language
+  - key
+  - value
+
+additionalProperties: false 

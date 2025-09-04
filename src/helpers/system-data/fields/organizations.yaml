@@ -1,0 +1,132 @@
+fields:
+  - field: id
+    type: uuid
+    meta:
+      interface: input
+      readonly: true
+      hidden: true
+      width: full
+      options:
+        template: '{{$uuid}}'
+
+  - field: name
+    type: string
+    meta:
+      interface: input
+      width: full
+      options:
+        font: sans
+        iconLeft: business
+
+  - field: company_name
+    type: string
+    meta:
+      interface: input
+      width: full
+      options:
+        font: sans
+        iconLeft: business
+
+  - field: billing_address
+    type: text
+    meta:
+      interface: input-multiline
+      width: full
+      options:
+        font: sans
+        iconLeft: location_on
+
+  - field: domain_name
+    type: string
+    meta:
+      interface: input
+      width: full
+      options:
+        font: sans
+        iconLeft: domain
+
+  - field: website_url
+    type: string
+    meta:
+      interface: input
+      width: full
+      options:
+        font: sans
+        iconLeft: link
+
+  - field: contact_email
+    type: string
+    meta:
+      interface: input
+      width: full
+      options:
+        font: sans
+        iconLeft: email
+
+  - field: contact_phone
+    type: string
+    meta:
+      interface: input
+      width: full
+      options:
+        font: sans
+        iconLeft: phone
+
+  - field: contact_name
+    type: string
+    meta:
+      interface: input
+      width: full
+      options:
+        font: sans
+        iconLeft: person
+
+  - field: logo
+    type: uuid
+    meta:
+      interface: file-image
+      width: half
+      options:
+        template: '{{file.filename}}'
+        enableCreate: true
+        enableSelect: true
+        fields:
+          - filename
+
+  - field: registration_number
+    type: string
+    meta:
+      interface: input
+      width: full
+      options:
+        font: sans
+        iconLeft: badge
+
+  - field: status
+    type: string
+    meta:
+      interface: select-dropdown
+      width: half
+      options:
+        choices:
+          - text: Active
+            value: active
+          - text: Inactive
+            value: inactive
+          - text: Suspended
+            value: suspended
+
+  - field: date_created
+    type: timestamp
+    meta:
+      interface: datetime
+      width: half
+      readonly: true
+
+  - field: metadata
+    type: json
+    meta:
+      interface: input-code
+      width: full
+      options:
+        language: json

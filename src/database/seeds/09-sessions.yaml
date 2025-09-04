@@ -1,0 +1,32 @@
+table: yp_sessions
+
+columns:
+  token:
+    type: string
+    length: 64
+    primary: true
+    nullable: false
+  user:
+    type: uuid
+    nullable: false
+    references:
+      table: yp_users
+      column: id
+  expires:
+    type: timestamp
+    nullable: false
+  ip:
+    type: string
+    length: 255
+  user_agent:
+    type: string
+    length: 255
+  next_token:
+    type: string
+    length: 255
+  origin:
+    type: string
+    length: 255
+  share:
+    type: uuid
+    nullable: true

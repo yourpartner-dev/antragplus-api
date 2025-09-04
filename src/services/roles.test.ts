@@ -1,0 +1,841 @@
+import { ForbiddenError, UnprocessableContentError } from '../helpers/errors/index.js';
+import type { SchemaOverview } from '../types/index.js';
+import type { Knex } from 'knex';
+import knex from 'knex';
+import { MockClient, Tracker, createTracker, type RawQuery } from 'knex-mock-client';
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+	type MockInstance,
+	type MockedFunction,
+} from 'vitest';
+import { ItemsService, PermissionsService, RolesService, UsersService } from './index.js';
+
+vi.mock('../../src/database/index', () => {
+	return { __esModule: true, default: vi.fn(), getDatabaseClient: vi.fn().mockReturnValue('postgres') };
+});
+
+vi.mock('../helpers/env/index.js', () => ({
+	useEnv: vi.fn().mockReturnValue({
+		EMAIL_TEMPLATES_PATH: './templates',
+		USERS_ADMIN_ACCESS_LIMIT: 3,
+		USERS_APP_ACCESS_LIMIT: 3,
+		USERS_API_ACCESS_LIMIT: 3,
+	}),
+}));
+
+const testSchema = {
+	collections: {
+		yp_roles: {
+			collection: 'yp_roles',
+			primary: 'id',
+			singleton: false,
+			sortField: null,
+			note: null,
+			accountability: null,
+			fields: {
+				id: {
+					field: 'id',
+					defaultValue: null,
+					nullable: false,
+					generated: true,
+					type: 'uuid',
+					dbType: 'uuid',
+					precision: null,
+					scale: null,
+					special: [],
+					note: null,
+					validation: null,
+					alias: false,
+				},
+			},
+		},
+	},
+	relations: [],
+} as SchemaOverview;
+
+describe('Integration Tests', () => {
+	let db: MockedFunction<Knex>;
+	let tracker: Tracker;
+
+	beforeAll(async () => {
+		db = vi.mocked(knex.default({ client: MockClient }));
+		tracker = createTracker(db);
+	});
+
+	beforeEach(() => {
+		tracker.on.any('yp_roles').response({});
+
+		tracker.on
+			.select(/"yp_roles"."id" from "yp_roles" order by "yp_roles"."id" asc limit .*/)
+			.response([]);
+
+		tracker.on
+			.select(
+				/(select count\("yp_users"\."id"\) as "count", "yp_roles"\."admin_access", "yp_roles"\."app_access" from "yp_users").*(where "yp_roles"\."id" = \?).*/,
+			)
+			.response([{ count: 0, admin_access: true, app_access: true }]);
+
+	});
+
+	afterEach(() => {
+		tracker.reset();
+	});
+
+	describe('Services / RolesService', () => {
+		describe('updateOne', () => {
+			let service: RolesService;
+			let superUpdateOne: MockInstance;
+			const adminRoleId = 'cbfd1e77-b883-4090-93e4-5bcbfbd48aba';
+			const userId1 = '07a5fee0-c168-49e2-8e33-4bae280e0c48';
+			const userId2 = 'abedf9a4-6956-4a9c-8904-c1aa08a68173';
+
+			beforeEach(() => {
+				service = new RolesService({
+					knex: db,
+					schema: testSchema,
+				});
+
+				superUpdateOne = vi.spyOn(ItemsService.prototype, 'updateOne');
+			});
+
+			afterEach(() => {
+				superUpdateOne.mockRestore();
+			});
+
+			describe('checkForOtherAdminUsers', () => {
+				describe('on an admin role', () => {
+					const admin_access = true;
+
+					describe('with an array of user ids', () => {
+						it('having an added user', async () => {
+							const data: Record<string, any> = {
+								users: [userId1, userId2],
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+
+						it('having a removed user', async () => {
+							const data: Record<string, any> = {
+								users: [userId1],
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+
+							tracker.on
+								.select('select "id" from "yp_users" where "role" = ?')
+								.responseOnce([{ id: userId1 }, { id: userId2 }]);
+
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+
+						it('having a removed last user that is not the last admin of system', async () => {
+							const data: Record<string, any> = {
+								users: [],
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+
+						it('having a removed a last user that is the last admin of system', async () => {
+							const service = new RolesService({
+								knex: db,
+								schema: testSchema,
+								accountability: { role: 'test', admin: false },
+							});
+
+							const data: Record<string, any> = {
+								users: [],
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 0 });
+
+							const promise = service.updateOne(adminRoleId, data);
+
+							expect.assertions(5); // to ensure both assertions in the catch block are reached
+
+							try {
+								await promise;
+							} catch (err: any) {
+								expect(err.message).toBe(`You don't have permission to access this.`);
+								expect(err).toBeInstanceOf(ForbiddenError);
+							}
+
+							expect(superUpdateOne).toHaveBeenCalled();
+
+							expect(superUpdateOne.mock.lastCall![2].preMutationError.message).toBe(
+								`Can't process content. You can't remove the last admin user from the admin role.`,
+							);
+
+							expect(superUpdateOne.mock.lastCall![2].preMutationError).toBeInstanceOf(UnprocessableContentError);
+						});
+					});
+
+					describe('with an array of user objects', () => {
+						it('having an added user', async () => {
+							const data: Record<string, any> = {
+								users: [{ id: userId1 }, { id: userId2 }],
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+
+							tracker.on
+								.select('select count(*) as "count" from "yp_users" where "id" in')
+								.responseOnce({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+
+						it('having a removed user', async () => {
+							const data: Record<string, any> = {
+								users: [{ id: userId1 }],
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+
+							tracker.on
+								.select('select "id" from "yp_users" where "role" = ?')
+								.responseOnce([{ id: userId1 }, { id: userId2 }]);
+
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+
+						it('having a removed last user that is not the last admin of system', async () => {
+							const data: Record<string, any> = {
+								users: [],
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+
+						it('having a removed a last user that is the last admin of system', async () => {
+							const service = new RolesService({
+								knex: db,
+								schema: testSchema,
+								accountability: { role: 'test', admin: false },
+							});
+
+							const data: Record<string, any> = {
+								users: [],
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 0 });
+
+							const promise = service.updateOne(adminRoleId, data);
+
+							expect.assertions(5); // to ensure both assertions in the catch block are reached
+
+							try {
+								await promise;
+							} catch (err: any) {
+								expect(err.message).toBe(`You don't have permission to access this.`);
+								expect(err).toBeInstanceOf(ForbiddenError);
+							}
+
+							expect(superUpdateOne).toHaveBeenCalled();
+
+							expect(superUpdateOne.mock.lastCall![2].preMutationError.message).toBe(
+								`Can't process content. You can't remove the last admin user from the admin role.`,
+							);
+
+							expect(superUpdateOne.mock.lastCall![2].preMutationError).toBeInstanceOf(UnprocessableContentError);
+						});
+					});
+
+					describe('with an alterations object', () => {
+						it('having a newly created user', async () => {
+							const data: Record<string, any> = {
+								users: {
+									create: [{ name: 'New User' }],
+									update: [],
+									delete: [],
+								},
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+
+						it('having an added user', async () => {
+							const data: Record<string, any> = {
+								users: {
+									create: [],
+									update: [{ role: adminRoleId, id: userId2 }],
+									delete: [],
+								},
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+
+						it('having a removed user', async () => {
+							const data: Record<string, any> = {
+								users: {
+									create: [],
+									update: [],
+									delete: [userId2],
+								},
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+
+							tracker.on
+								.select('select "id" from "yp_users" where "role" = ?')
+								.responseOnce([{ id: userId1 }, { id: userId2 }]);
+
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+
+						it('having a removed last user that is not the last admin of system', async () => {
+							const data: Record<string, any> = {
+								users: {
+									create: [],
+									update: [],
+									delete: [userId1],
+								},
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+
+						it('having a removed a last user that is the last admin of system', async () => {
+							const service = new RolesService({
+								knex: db,
+								schema: testSchema,
+								accountability: { role: 'test', admin: false },
+							});
+
+							const data: Record<string, any> = {
+								users: {
+									create: [],
+									update: [],
+									delete: [userId1],
+								},
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 0 });
+
+							const promise = service.updateOne(adminRoleId, data);
+
+							expect.assertions(5); // to ensure both assertions in the catch block are reached
+
+							try {
+								await promise;
+							} catch (err: any) {
+								expect(err.message).toBe(`You don't have permission to access this.`);
+								expect(err).toBeInstanceOf(ForbiddenError);
+							}
+
+							expect(superUpdateOne).toHaveBeenCalled();
+
+							expect(superUpdateOne.mock.lastCall![2].preMutationError.message).toBe(
+								`Can't process content. You can't remove the last admin user from the admin role.`,
+							);
+
+							expect(superUpdateOne.mock.lastCall![2].preMutationError).toBeInstanceOf(UnprocessableContentError);
+						});
+					});
+				});
+
+				describe('on an non-admin role', () => {
+					const admin_access = false;
+
+					describe('with an array of user ids', () => {
+						it('having an added user', async () => {
+							const data: Record<string, any> = {
+								users: [userId1, userId2],
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+
+							tracker.on
+								.select(
+									({ sql, bindings }: RawQuery) =>
+										sql.startsWith('select count(*) as "count" from "yp_users"') && bindings.includes(userId2),
+								)
+								.response({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+
+						it('having an added user that is the last admin', async () => {
+							const service = new RolesService({
+								knex: db,
+								schema: testSchema,
+								accountability: { role: 'test', admin: false },
+							});
+
+							const data: Record<string, any> = {
+								users: [userId1, userId2],
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 0 });
+
+							const promise = service.updateOne(adminRoleId, data);
+
+							expect.assertions(5); // to ensure both assertions in the catch block are reached
+
+							try {
+								await promise;
+							} catch (err: any) {
+								expect(err.message).toBe(`You don't have permission to access this.`);
+								expect(err).toBeInstanceOf(ForbiddenError);
+							}
+
+							expect(superUpdateOne).toHaveBeenCalled();
+
+							expect(superUpdateOne.mock.lastCall![2].preMutationError.message).toBe(
+								`Can't process content. You can't remove the last admin user from the admin role.`,
+							);
+
+							expect(superUpdateOne.mock.lastCall![2].preMutationError).toBeInstanceOf(UnprocessableContentError);
+						});
+
+						it('having a removed user', async () => {
+							const data: Record<string, any> = {
+								users: [userId1],
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+
+							tracker.on
+								.select('select "id" from "yp_users" where "role" = ?')
+								.responseOnce([{ id: userId1 }, { id: userId2 }]);
+
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+					});
+
+					describe('with an array of user objects', () => {
+						it('having an added user', async () => {
+							const data: Record<string, any> = {
+								users: [{ id: userId1 }, { id: userId2 }],
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+
+						it('having an added user that is the last admin', async () => {
+							const service = new RolesService({
+								knex: db,
+								schema: testSchema,
+								accountability: { role: 'test', admin: false },
+							});
+
+							const data: Record<string, any> = {
+								users: [{ id: userId1 }, { id: userId2 }],
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 0 });
+
+							const promise = service.updateOne(adminRoleId, data);
+
+							expect.assertions(5); // to ensure both assertions in the catch block are reached
+
+							try {
+								await promise;
+							} catch (err: any) {
+								expect(err.message).toBe(`You don't have permission to access this.`);
+								expect(err).toBeInstanceOf(ForbiddenError);
+							}
+
+							expect(superUpdateOne).toHaveBeenCalled();
+
+							expect(superUpdateOne.mock.lastCall![2].preMutationError.message).toBe(
+								`Can't process content. You can't remove the last admin user from the admin role.`,
+							);
+
+							expect(superUpdateOne.mock.lastCall![2].preMutationError).toBeInstanceOf(UnprocessableContentError);
+						});
+
+						it('having a removed user', async () => {
+							const data: Record<string, any> = {
+								users: [{ id: userId1 }],
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+
+							tracker.on
+								.select('select "id" from "yp_users" where "role" = ?')
+								.responseOnce([{ id: userId1 }, { id: userId2 }]);
+
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+					});
+
+					describe('with an alterations object', () => {
+						it('having a newly created user', async () => {
+							const data: Record<string, any> = {
+								users: {
+									create: [{ name: 'New User' }],
+									update: [],
+									delete: [],
+								},
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+
+						it('having an added user', async () => {
+							const data: Record<string, any> = {
+								users: {
+									create: [],
+									update: [{ role: adminRoleId, id: userId2 }],
+									delete: [],
+								},
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+
+						it('having an added user that is the last admin', async () => {
+							const service = new RolesService({
+								knex: db,
+								schema: testSchema,
+								accountability: { role: 'test', admin: false },
+							});
+
+							const data: Record<string, any> = {
+								users: {
+									create: [],
+									update: [{ role: adminRoleId, id: userId2 }],
+									delete: [],
+								},
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+							tracker.on.select('select "id" from "yp_users" where "role" = ?').responseOnce([{ id: userId1 }]);
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 0 });
+
+							const promise = service.updateOne(adminRoleId, data);
+
+							expect.assertions(5); // to ensure both assertions in the catch block are reached
+
+							try {
+								await promise;
+							} catch (err: any) {
+								expect(err.message).toBe(`You don't have permission to access this.`);
+								expect(err).toBeInstanceOf(ForbiddenError);
+							}
+
+							expect(superUpdateOne).toHaveBeenCalled();
+
+							expect(superUpdateOne.mock.lastCall![2].preMutationError.message).toBe(
+								`Can't process content. You can't remove the last admin user from the admin role.`,
+							);
+
+							expect(superUpdateOne.mock.lastCall![2].preMutationError).toBeInstanceOf(UnprocessableContentError);
+						});
+
+						it('having a removed user', async () => {
+							const data: Record<string, any> = {
+								users: {
+									create: [],
+									update: [],
+									delete: [userId2],
+								},
+							};
+
+							tracker.on.select('select "admin_access" from "yp_roles"').responseOnce({ admin_access });
+
+							tracker.on
+								.select('select "id" from "yp_users" where "role" = ?')
+								.responseOnce([{ id: userId1 }, { id: userId2 }]);
+
+							tracker.on.select('select count(*) as "count" from "yp_users"').responseOnce({ count: 1 });
+
+							const result = await service.updateOne(adminRoleId, data);
+							expect(result).toBe(adminRoleId);
+							expect(superUpdateOne).toHaveBeenCalledOnce();
+						});
+					});
+				});
+			});
+		});
+	});
+
+	describe('Services / Roles', () => {
+		let service: RolesService;
+		let checkForOtherAdminRolesSpy: MockInstance;
+		let checkForOtherAdminUsersSpy: MockInstance;
+
+		beforeEach(() => {
+			service = new RolesService({
+				knex: db,
+				schema: {
+					collections: {
+						yp_roles: {
+							collection: 'yp_roles',
+							primary: 'id',
+							singleton: false,
+							sortField: null,
+							note: null,
+							accountability: null,
+							fields: {
+								id: {
+									field: 'id',
+									defaultValue: null,
+									nullable: false,
+									generated: true,
+									type: 'integer',
+									dbType: 'integer',
+									precision: null,
+									scale: null,
+									special: [],
+									note: null,
+									validation: null,
+									alias: false,
+								},
+							},
+						},
+					},
+					relations: [],
+				},
+			});
+
+			vi.spyOn(PermissionsService.prototype, 'deleteByQuery').mockResolvedValueOnce([]);
+			vi.spyOn(UsersService.prototype, 'updateByQuery').mockResolvedValueOnce([]);
+			vi.spyOn(UsersService.prototype, 'deleteByQuery').mockResolvedValueOnce([]);
+
+			// "as any" are needed since these are private methods
+			checkForOtherAdminRolesSpy = vi
+				.spyOn(RolesService.prototype as any, 'checkForOtherAdminRoles')
+				.mockResolvedValue(true);
+
+			checkForOtherAdminUsersSpy = vi
+				.spyOn(RolesService.prototype as any, 'checkForOtherAdminUsers')
+				.mockResolvedValue(true);
+		});
+
+		afterEach(() => {
+			checkForOtherAdminRolesSpy.mockRestore();
+			checkForOtherAdminUsersSpy.mockRestore();
+		});
+
+		describe('createOne', () => {
+			it('should not checkForOtherAdminRoles', async () => {
+				await service.createOne({});
+				expect(checkForOtherAdminRolesSpy).not.toBeCalled();
+			});
+
+			it('should throw due to invalid ip_access', async () => {
+				await expect(service.createOne({ ip_access: ['invalid_ip'] })).rejects.toThrow(
+					'IP Access contains an incorrect value. Valid values are: IP addresses, IP ranges and CIDR blocks',
+				);
+			});
+		});
+
+		describe('createMany', () => {
+			it('should not checkForOtherAdminRoles', async () => {
+				await service.createMany([{}]);
+				expect(checkForOtherAdminRolesSpy).not.toBeCalled();
+			});
+
+			it('should throw due to invalid ip_access', async () => {
+				await expect(service.createMany([{ ip_access: ['invalid_ip'] }])).rejects.toThrow(
+					'IP Access contains an incorrect value. Valid values are: IP addresses, IP ranges and CIDR blocks',
+				);
+			});
+		});
+
+		describe('updateOne', () => {
+			it('should not checkForOtherAdminRoles', async () => {
+				await service.updateOne(1, {});
+				expect(checkForOtherAdminRolesSpy).not.toBeCalled();
+			});
+
+			it('should checkForOtherAdminRoles once and not checkForOtherAdminUsersSpy', async () => {
+				await service.updateOne(1, { admin_access: false });
+				expect(checkForOtherAdminRolesSpy).toBeCalledTimes(1);
+				expect(checkForOtherAdminUsersSpy).not.toBeCalled();
+			});
+
+			it('should checkForOtherAdminRoles and checkForOtherAdminUsersSpy once', async () => {
+				await service.updateOne(1, { admin_access: false, users: [1] });
+				expect(checkForOtherAdminRolesSpy).toBeCalledTimes(1);
+				expect(checkForOtherAdminUsersSpy).toBeCalledTimes(1);
+			});
+
+			it('should throw due to invalid ip_access', async () => {
+				await expect(service.updateOne(1, { ip_access: ['invalid_ip'] })).rejects.toThrow(
+					'IP Access contains an incorrect value. Valid values are: IP addresses, IP ranges and CIDR blocks',
+				);
+			});
+		});
+
+		describe('updateMany', () => {
+			it('should not checkForOtherAdminRoles', async () => {
+				await service.updateMany([1], {});
+				expect(checkForOtherAdminRolesSpy).not.toBeCalled();
+			});
+
+			it('should checkForOtherAdminRoles once', async () => {
+				await service.updateMany([1], { admin_access: false });
+				expect(checkForOtherAdminRolesSpy).toBeCalledTimes(1);
+			});
+
+			it('should throw due to invalid ip_access', async () => {
+				await expect(service.updateMany([1], { ip_access: ['invalid_ip'] })).rejects.toThrow(
+					'IP Access contains an incorrect value. Valid values are: IP addresses, IP ranges and CIDR blocks',
+				);
+			});
+		});
+
+		describe('updateBatch', () => {
+			it('should not checkForOtherAdminRoles', async () => {
+				await service.updateBatch([{ id: 1 }]);
+				expect(checkForOtherAdminRolesSpy).not.toBeCalled();
+			});
+
+			it('should checkForOtherAdminRoles once', async () => {
+				await service.updateBatch([{ id: 1, admin_access: false }]);
+				expect(checkForOtherAdminRolesSpy).toBeCalledTimes(1);
+			});
+
+			it('should throw due to invalid ip_access', async () => {
+				await expect(service.updateBatch([{ id: 1, ip_access: ['invalid_ip'] }])).rejects.toThrow(
+					'IP Access contains an incorrect value. Valid values are: IP addresses, IP ranges and CIDR blocks',
+				);
+			});
+		});
+
+		describe('updateByQuery', () => {
+			it('should not checkForOtherAdminRoles', async () => {
+				// mock return value for the following empty query
+				vi.spyOn(ItemsService.prototype, 'getKeysByQuery').mockResolvedValueOnce([1]);
+				await service.updateByQuery({}, {});
+				expect(checkForOtherAdminRolesSpy).not.toBeCalled();
+			});
+
+			it('should checkForOtherAdminRoles once', async () => {
+				// mock return value for the following empty query
+				vi.spyOn(ItemsService.prototype, 'getKeysByQuery').mockResolvedValueOnce([1]);
+				await service.updateByQuery({}, { admin_access: false });
+				expect(checkForOtherAdminRolesSpy).toBeCalledTimes(1);
+			});
+
+			it('should throw due to invalid ip_access', async () => {
+				await expect(service.updateByQuery({}, { ip_access: ['invalid_ip'] })).rejects.toThrow(
+					'IP Access contains an incorrect value. Valid values are: IP addresses, IP ranges and CIDR blocks',
+				);
+			});
+		});
+
+		describe('deleteOne', () => {
+			it('should checkForOtherAdminRoles once', async () => {
+				await service.deleteOne(1);
+				expect(checkForOtherAdminRolesSpy).toBeCalledTimes(1);
+			});
+		});
+
+		describe('deleteMany', () => {
+			it('should checkForOtherAdminRoles once', async () => {
+				await service.deleteMany([1]);
+				expect(checkForOtherAdminRolesSpy).toBeCalledTimes(1);
+			});
+		});
+
+		describe('deleteByQuery', () => {
+			it('should checkForOtherAdminRoles once', async () => {
+				// mock return value for the following empty query
+				vi.spyOn(ItemsService.prototype, 'getKeysByQuery').mockResolvedValueOnce([1]);
+				await service.deleteByQuery({});
+				expect(checkForOtherAdminRolesSpy).toBeCalledTimes(1);
+			});
+		});
+	});
+});

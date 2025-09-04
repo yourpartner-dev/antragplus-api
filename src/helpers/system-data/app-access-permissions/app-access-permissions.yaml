@@ -1,0 +1,74 @@
+- collection: yp_activity
+  action: read
+  permissions:
+    user:
+      _eq: $CURRENT_USER
+
+- collection: yp_activity
+  action: create
+  validation:
+    comment:
+      _nnull: true
+
+- collection: yp_roles
+  action: read
+  permissions:
+    id:
+      _eq: $CURRENT_ROLE
+
+- collection: yp_translations
+  action: read
+
+- collection: yp_notifications
+  action: read
+  permissions:
+    recipient:
+      _eq: $CURRENT_USER
+
+- collection: yp_notifications
+  action: update
+  permissions:
+    recipient:
+      _eq: $CURRENT_USER
+  fields:
+    - status
+
+- collection: yp_users
+  action: update
+  permissions:
+    id:
+      _eq: $CURRENT_USER
+
+- collection: yp_users
+  action: read
+  permissions:
+    id:
+      _eq: $CURRENT_USER
+  fields:
+    - id
+    - first_name
+    - last_name
+    - last_page
+    - email
+    - password
+    - location
+    - title
+    - description
+    - tags
+    - preferences_divider
+    - avatar
+    - language
+    - appearance
+    - theme_light
+    - theme_dark
+    - tfa_secret
+    - status
+    - role
+    - company
+    - meta_information
+
+- collection: yp_organizations
+  action: read
+  permissions:
+    id:
+      _eq: $CURRENT_USER.organization_id

@@ -1,0 +1,27 @@
+table: yp_roles
+
+columns:
+  id:
+    type: uuid
+    primary: true
+    nullable: false
+  name:
+    type: string
+    length: 100
+    nullable: false
+  description:
+    type: text
+  ip_access:
+    type: text
+  enforce_tfa:
+    type: boolean
+    nullable: false
+    default: false
+  admin_access:
+    type: boolean
+    nullable: false
+    default: false
+  app_access:
+    type: boolean
+    nullable: false
+    default: true
