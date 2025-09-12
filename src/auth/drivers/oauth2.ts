@@ -32,6 +32,7 @@ import { isLoginRedirectAllowed } from '../../helpers/utils/is-login-redirect-al
 import { Url } from '../../helpers/utils/url.js';
 import { LocalAuthDriver } from './local.js';
 import { getSecret } from '../../helpers/utils/get-secret.js';
+import { createSignedTokenData } from '../../helpers/utils/node/encrypt-data.js';
 
 export class OAuth2AuthDriver extends LocalAuthDriver {
 	client: Client;
@@ -111,14 +112,40 @@ export class OAuth2AuthDriver extends LocalAuthDriver {
 		}
 	}
 
-	private async fetchUserId(identifier: string): Promise<string | undefined> {
-		const user = await this.knex
+	private async fetchUserId(identifier: string, email?: string): Promise<string | undefined> {
+		// First try to find by external_identifier
+		let user = await this.knex
 			.select('id')
 			.from('yp_users')
 			.whereRaw('LOWER(??) = ?', ['external_identifier', identifier.toLowerCase()])
 			.first();
 
-		return user?.id;
+		if (user) {
+			return user.id;
+		}
+
+		// If not found and we have an email, try to find by email
+		if (email) {
+			user = await this.knex
+				.select('id')
+				.from('yp_users')
+				.whereRaw('LOWER(??) = ?', ['email', email.toLowerCase()])
+				.first();
+
+			if (user) {
+				// Update the user's external_identifier to link their Google account
+				await this.knex('yp_users')
+					.where('id', user.id)
+					.update({
+						external_identifier: identifier,
+						provider: 'google'
+					});
+
+				return user.id;
+			}
+		}
+
+		return undefined;
 	}
 
 	override async getUserID(payload: Record<string, any>): Promise<string> {
@@ -139,7 +166,7 @@ export class OAuth2AuthDriver extends LocalAuthDriver {
 				? payload['codeVerifier']
 				: generators.codeChallenge(payload['codeVerifier']);
 
-			tokenSet = await this.client.oauthCallback(
+			tokenSet = await this.client.callback(
 				this.redirectUrl,
 				{ code: payload['code'], state: payload['state'] },
 				{ code_verifier: payload['codeVerifier'], state: codeChallenge },
@@ -412,6 +439,20 @@ export function createOAuth2AuthRouter(providerName: string): Router {
 			if (redirect) {
 				if (authMode === 'session') {
 					res.cookie(env['SESSION_COOKIE_NAME'] as string, accessToken, SESSION_COOKIE_OPTIONS);
+				} else if(authMode === 'cookie') {
+					res.cookie(env['REFRESH_TOKEN_COOKIE_NAME'] as string, refreshToken, REFRESH_COOKIE_OPTIONS);
+				} else {
+					res.cookie(env['REFRESH_TOKEN_COOKIE_NAME'] as string, refreshToken, REFRESH_COOKIE_OPTIONS);
+					const tokenData = {
+						access_token: accessToken,
+						refresh_token: refreshToken,
+						expires: expires
+					};
+					
+					const signedData = createSignedTokenData(tokenData);
+					const redirectUrl = new URL(redirect);
+					redirectUrl.searchParams.append('auth', signedData);
+					return res.redirect(redirectUrl.toString());
 				}
 
 				return res.redirect(redirect);

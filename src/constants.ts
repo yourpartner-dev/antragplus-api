@@ -64,7 +64,7 @@ export const UUID_REGEX = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 
 export const REFRESH_COOKIE_OPTIONS: CookieOptions = {
 	httpOnly: true,
-	domain: DEFAULTS.REFRESH_TOKEN_COOKIE_NAME,
+	domain: DEFAULTS.REFRESH_TOKEN_COOKIE_DOMAIN as string | undefined,
 	maxAge: getMilliseconds(DEFAULTS.REFRESH_TOKEN_TTL),
 	secure: Boolean(DEFAULTS.REFRESH_TOKEN_COOKIE_SECURE),
 	sameSite: (DEFAULTS.REFRESH_TOKEN_COOKIE_SAME_SITE || 'strict') as 'lax' | 'strict' | 'none',
@@ -72,10 +72,10 @@ export const REFRESH_COOKIE_OPTIONS: CookieOptions = {
 
 export const SESSION_COOKIE_OPTIONS: CookieOptions = {
 	httpOnly: true,
-	domain: DEFAULTS.REFRESH_TOKEN_COOKIE_NAME,
-	maxAge: getMilliseconds(DEFAULTS.REFRESH_TOKEN_TTL),
-	secure: Boolean(DEFAULTS.REFRESH_TOKEN_COOKIE_SECURE),
-	sameSite: (DEFAULTS.REFRESH_TOKEN_COOKIE_SAME_SITE || 'strict') as 'lax' | 'strict' | 'none',
+	domain: DEFAULTS.SESSION_COOKIE_DOMAIN as string | undefined,
+	maxAge: getMilliseconds(DEFAULTS.SESSION_COOKIE_TTL || DEFAULTS.REFRESH_TOKEN_TTL),
+	secure: Boolean(DEFAULTS.SESSION_COOKIE_SECURE !== undefined ? DEFAULTS.SESSION_COOKIE_SECURE : DEFAULTS.REFRESH_TOKEN_COOKIE_SECURE),
+	sameSite: (DEFAULTS.SESSION_COOKIE_SAME_SITE || DEFAULTS.REFRESH_TOKEN_COOKIE_SAME_SITE || 'lax') as 'lax' | 'strict' | 'none',
 };
 
 export const OAS_REQUIRED_SCHEMAS = ['Query', 'x-metadata'];

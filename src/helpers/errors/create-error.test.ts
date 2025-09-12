@@ -1,4 +1,4 @@
-import { randomAlpha, randomInteger } from '../helpers/random/index.js';
+import { randomAlpha, randomInteger } from '../random/index.js';
 import { beforeEach, test, expect, vi } from 'vitest';
 import { createError } from './create-error.js';
 

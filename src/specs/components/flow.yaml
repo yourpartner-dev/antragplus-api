@@ -40,13 +40,13 @@ properties:
     description: The permission used during the flow. One of `$public`, `$trigger`, `$full`, or UUID of a role.
     type: string
     example: '$trigger'
-  date_created:
+  created_at:
     description: Timestamp in ISO8601 when the flow was created.
     type: string
     example: '2022-05-11T13:14:52Z'
     format: date-time
     nullable: true
-  user_created:
+  created_by:
     description: The user who created the flow.
     example: 63716273-0f29-4648-8a2a-2af2948f6f78
     oneOf:

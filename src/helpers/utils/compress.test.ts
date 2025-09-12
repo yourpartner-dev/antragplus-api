@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { compress, decompress, mapToSortedArray, encode, decode, to36, to10, getValueForToken } from './compress.js';
+import { compress, decompressJSON, mapToSortedArray, encode, decode, to36, to10, getValueForToken } from './compress.js';
 
 const plain = {
 	string: 'yourpartner',
@@ -39,11 +39,11 @@ const geoJSON = {
 const dateString = '2022-02-14T01:02:11.000Z';
 
 const dateInput = {
-	date_created: new Date(dateString),
+	created_at: new Date(dateString),
 };
 
 const dateOutput = {
-	date_created: dateString,
+	created_at: dateString,
 };
 
 describe('compress', () => {
@@ -72,7 +72,7 @@ describe('compress', () => {
 	});
 
 	test('Compresses Date objects into strings', () => {
-		expect(compress(dateInput)).toBe('date_created|2022-02-14T01:02:11.000Z^^^$0|1]');
+		expect(compress(dateInput)).toBe('created_at|2022-02-14T01:02:11.000Z^^^$0|1]');
 	});
 
 	test('Throws error on non-supported types', () => {
@@ -83,7 +83,7 @@ describe('compress', () => {
 describe('decompress', () => {
 	test('Decompresses plain objects', () => {
 		expect(
-			decompress(
+			decompressJSON(
 				'string|yourpartner|true|false|null|empty|integer|float|undefined^1K6^12.34^$0|1|2|-1|3|-2|4|-3|5|-4|6|9|7|A|8|-5]',
 			),
 		).toEqual(plain);
@@ -91,7 +91,7 @@ describe('decompress', () => {
 
 	test('Decompresses deep nested objects', () => {
 		expect(
-			decompress(
+			decompressJSON(
 				'another|string|yourpartner|true|false|null|empty|integer|float|undefined|nested|arr^1K6^12.34^$0|$1|2|3|-1|4|-2|5|-3|6|-4|7|C|8|D|9|-5]|A|$1|2|3|-1|4|-2|5|-3|6|-4|7|C|8|D|9|-5]|B|@$1|2|3|-1|4|-2|5|-3|6|-4|7|C|8|D|9|-5]|$1|2|3|-1|4|-2|5|-3|6|-4|7|C|8|D|9|-5]]]',
 			),
 		).toEqual(deep);
@@ -99,7 +99,7 @@ describe('decompress', () => {
 
 	test('Decompresses arrays', () => {
 		expect(
-			decompress(
+			decompressJSON(
 				'yourpartner|another|string|true|false|null|empty|integer|float|undefined|nested|arr^1K6^12.34^@0|-2|$1|$2|0|3|-1|4|-2|5|-3|6|-4|7|C|8|D|9|-5]|A|$2|0|3|-1|4|-2|5|-3|6|-4|7|C|8|D|9|-5]|B|@$2|0|3|-1|4|-2|5|-3|6|-4|7|C|8|D|9|-5]|$2|0|3|-1|4|-2|5|-3|6|-4|7|C|8|D|9|-5]]]]',
 			),
 		).toEqual(arr);
@@ -107,22 +107,22 @@ describe('decompress', () => {
 
 	test('Decompresses GeoJSON properly', () => {
 		expect(
-			decompress(
+			decompressJSON(
 				'data|id|f36431ea-0d25-4747-8b37-185eb3ba66d0|point1|type|Point|coordinates|point2^^-107.57812499999984|34.30714385628873|-91.25923790168956|42.324763327278106^$0|@$1|2|3|$4|5|6|@8|9]]|7|$4|5|6|@A|B]]]]]',
 			),
 		).toEqual(geoJSON);
 	});
 
 	test('Decompresses Date strings', () => {
-		expect(decompress('date_created|2022-02-14T01:02:11.000Z^^^$0|1]')).toEqual(dateOutput);
+		expect(decompressJSON('created_at|2022-02-14T01:02:11.000Z^^^$0|1]')).toEqual(dateOutput);
 	});
 
 	test('Errors when not enough parts exist', () => {
-		expect(() => decompress('a|b^1K6^')).toThrowError();
+		expect(() => decompressJSON('a|b^1K6^')).toThrowError();
 	});
 
 	test('Errors on illegal ending token', () => {
-		expect(() => decompress('^^^]')).toThrowError();
+		expect(() => decompressJSON('^^^]')).toThrowError();
 	});
 });
 

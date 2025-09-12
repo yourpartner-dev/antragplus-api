@@ -63,7 +63,7 @@ async function performMyFirstTask() {
         
         logger.info('Successfully completed myFirstTask.');
     } catch (error: any) {
-        logger.error('Error during myFirstTask:', error);
+        logger.error(error, 'Error during myFirstTask');
         // Rethrow or handle as appropriate for your application
     }
 }
@@ -78,7 +78,7 @@ async function performMySecondTask() {
         
         logger.info('Successfully completed mySecondTask.');
     } catch (error: any) {
-        logger.error('Error during mySecondTask:', error);
+        logger.error(error, 'Error during mySecondTask');
     }
 }
 ```

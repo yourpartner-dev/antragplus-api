@@ -3,7 +3,7 @@ import { randIp, randUrl } from '@ngneat/falso';
 import os from 'node:os';
 import type { Logger } from 'pino';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { useLogger } from '../helpers/logger/index.js';
+import { useLogger } from '../logger/index.js';
 import { ipInNetworks } from '../utils/ip-in-networks.js';
 import { isDeniedIp } from './is-denied-ip.js';
 

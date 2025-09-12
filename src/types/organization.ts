@@ -15,6 +15,6 @@ export interface Organization {
   logo: string | File | null;
   registration_number: string | null;
   status: OrganizationStatus;
-  date_created: string;
+  created_at: string;
   metadata: Record<string, any> | null;
 }

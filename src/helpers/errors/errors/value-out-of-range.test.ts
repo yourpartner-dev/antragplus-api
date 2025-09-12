@@ -1,4 +1,4 @@
-import { randomAlpha, randomInteger } from '../../helpers/random/index.js';
+import { randomAlpha, randomInteger } from '../../random/index.js';
 import { beforeEach, expect, test } from 'vitest';
 import type { ValueOutOfRangeErrorExtensions } from './value-out-of-range.js';
 import { messageConstructor } from './value-out-of-range.js';

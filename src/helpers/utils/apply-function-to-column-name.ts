@@ -7,8 +7,8 @@ import { REGEX_BETWEEN_PARENS } from '../../constants.js';
  * @example
  *
  * ```js
- * applyFunctionToColumnName('year(date_created)');
- * // => "date_created_year"
+ * applyFunctionToColumnName('year(created_at)');
+ * // => "created_at_year"
  * ```
  */
 export function applyFunctionToColumnName(column: string): string {

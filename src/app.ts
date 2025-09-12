@@ -23,6 +23,7 @@ import usersRouter from './controllers/users.js';
 import utilsRouter from './controllers/utils.js';
 import graphqlRouter from './controllers/graphql.js';
 import tusRouter from './controllers/tus.js';
+import aiRouter from './controllers/ai/index.js';
 import 	{
 	validateDatabaseConnection,
 	validateDatabaseExtensions,
@@ -49,6 +50,7 @@ import { validateStorage } from './helpers/utils/validate-storage.js';
 import './hooks/index.js';
 
 //Import all schedulers here if any
+import { initializeEmbeddingProcessor }  from './schedulers/embedding-processor.js';
 
 export default async function createApp(): Promise<express.Application> {
 	const env = useEnv();
@@ -238,15 +240,21 @@ export default async function createApp(): Promise<express.Application> {
 	app.use('/users', usersRouter);
 	app.use('/utils', utilsRouter);
 
+	// AI routes
+	app.use('/api/ai', aiRouter);
 
 	app.use(notFoundHandler);
 	app.use(errorHandler);
+
+	//Schedulers
+	initializeEmbeddingProcessor();
 
 	await emitter.emitInit('routes.after', { app });
 
 	//scheduleTusCleanup();
 
 	await emitter.emitInit('app.after', { app });
+
 
 	return app;
 }

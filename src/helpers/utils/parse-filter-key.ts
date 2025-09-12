@@ -1,7 +1,7 @@
 /**
- * Result for keys with a function (e.g. `year(date_created)`):
+ * Result for keys with a function (e.g. `year(created_at)`):
  * - Group 1: Function (`year`)
- * - Group 3: Field (`date_created`)
+ * - Group 3: Field (`created_at`)
  *
  * If group 3 is undefined, it is a key without a function.
  */

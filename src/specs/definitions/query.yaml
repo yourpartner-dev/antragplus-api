@@ -17,7 +17,7 @@ properties:
     items:
       type: string
     description: How to sort the returned items.
-    example: ['-date_created']
+    example: ['-created_at']
   limit:
     type: number
     description: Set the maximum number of items that will be returned

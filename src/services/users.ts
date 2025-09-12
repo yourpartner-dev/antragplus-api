@@ -679,7 +679,7 @@ export class UsersService extends ItemsService {
 	}
 
 	async resetPassword(token: string, password: string): Promise<void> {
-		const { email, scope, hash } = jwt.verify(token, getSecret(), { issuer: 'yourpartner' }) as {
+		const { email, scope, hash } = verifyJWT(token, getSecret()) as {
 			email: string;
 			scope: string;
 			hash: string;

@@ -116,7 +116,7 @@ fields:
           - text: Suspended
             value: suspended
 
-  - field: date_created
+  - field: created_at
     type: timestamp
     meta:
       interface: datetime

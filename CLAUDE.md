@@ -1,0 +1,25 @@
+- Overall project state: ../README-PROJECT-STATE.md
+- Product requirements: ../claude-dir/product-scope.csv (user stories format)
+- Backend implementation plan: ../claude-dir/BACKEND_AI_IMPLEMENTATION_README.md
+- Frontend implementation plan: ../claude-dir/FRONTEND_AI_IMPLEMENTATION_README.md
+- Always use pnpm
+- Always check package.json for available commands and installed libraries/versions
+- Always read README.md files in folders to understand implementation
+- Before implementing, check helper functions and project structure
+- When modifying existing code, check all imports and dependencies first
+- ../antragplus-api - Backend API based on yp.dev API generator (similar to Directus API). Built on Knex with PostgreSQL. System tables prefixed with yp_. See /antragplus-api/README.md for details
+- ../antragplus-web - Frontend with Tailwind CSS in Nextjs. Already connected to backend API. All new components must match existing design system
+- Using Vercel AI SDK for AI capabilities. Reference: https://github.com/vercel/ai-chatbot/. Reuse ai-chatbot components and functionality. Adapt to match our UX/UI completely
+- ALWAYS READ FRONTEND_AI_IMPLEMENTATION_README.md and  BACKEND_AI_IMPLEMENTATION_README.md under /claude-dire BEFORE and after every message.
+- ALWAYS CHECK THE PACKAGE.JSON, /lib and /components before creating or editing files. 
+- Always check the database model to understand how backend is structured. 
+- The Backend is based on directus API only. Specifically read about the items endpoints: https://directus.io/docs/api/items
+- The backend is based on directus API only. Here is the API reference https://directus.io/docs/api
+- DO NOT CREATE NEW APIs, UNLESS EXPLICITLY TOLD. USE THE EXISTING ONES. 
+- On the frontend you should be able to get any application specific table using the items api with the table name. 
+- For the AI apis there are custom apis already created.
+- ALWAYS REVIEW THE DATABASE MODEL FOR BETTER UNDERSTANDING OF THE FIELDS AND PROJECT STRUCTURE
+- THE YP/DIRECTUS CORE STRUCTURE IS UNDER ./src/database/seeds/* every YAML file describes the YP CORE TABLES which ALL should have a dedicated controller. Each table is storead as yp_[table_name]
+- THE PROJECT TABLES ARE ADDED AS SQL FILE under ./src/database/migrations/seed.sql
+- FOCUS RIGHT NOW: GRANT CREATION & MANAGEMENT. Documentation for this you can find under ../claude-dir/GRANT_UPLOAD_IMPLEMENTATION_STATUS.md
+- YOU ARE IN THE BACKEND DIRECTORY

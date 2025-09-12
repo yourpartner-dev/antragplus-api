@@ -1,6 +1,6 @@
 import { ItemsService } from './items.js';
 import { FilesService } from './files.js';
-import type { PrimaryKey } from '../types/index.js';
+import type { Item, PrimaryKey } from '../types/index.js';
 import type { Organization } from '../types/organization.js';
 import { useEnv } from '../helpers/env/index.js';
 import { toArray } from '../helpers/utils/to-array.js';
@@ -59,8 +59,11 @@ export class OrganizationsService extends ItemsService<Organization, string> {
 	override async updateOne(key: PrimaryKey, data: Partial<Organization>): Promise<PrimaryKey> {
 		if (data.logo) {
 			// Get existing organization to check for current logo
-			const existingOrg = await this.readOne(key);
-			data.logo = await this.handleLogo(data.logo, existingOrg?.logo);
+			const existingOrg: Item = await this.readOne(key);
+			if(existingOrg['logo']) {
+				data.logo = await this.handleLogo(data.logo, existingOrg['logo']);
+			}
+						
 		}
 		return await super.updateOne(key, data);
 	}
@@ -68,11 +71,11 @@ export class OrganizationsService extends ItemsService<Organization, string> {
 	override async updateMany(keys: PrimaryKey[], data: Partial<Organization>): Promise<PrimaryKey[]> {
 		if (data.logo) {
 			// Get existing organizations to check for current logos
-			const existingOrgs = await this.readMany(keys);
+			const existingOrgs: Item[] = await this.readMany(keys);
 			// Delete all existing logos
 			for (const org of existingOrgs) {
-				if (org.logo) {
-					await this.handleLogo(null, org.logo);
+				if (org["logo"]) {
+					await this.handleLogo(null, org["logo"]);
 				}
 			}
 			// Upload new logo
@@ -84,11 +87,11 @@ export class OrganizationsService extends ItemsService<Organization, string> {
 	override async updateByQuery(query: any, data: Partial<Organization>): Promise<PrimaryKey[]> {
 		if (data.logo) {
 			// Get existing organizations to check for current logos
-			const existingOrgs = await this.readByQuery(query);
+			const existingOrgs: Item[] = await this.readByQuery(query);
 			// Delete all existing logos
 			for (const org of existingOrgs) {
-				if (org.logo) {
-					await this.handleLogo(null, org.logo);
+				if (org["logo"]) {
+					await this.handleLogo(null, org["logo"]);
 				}
 			}
 			// Upload new logo
@@ -99,20 +102,20 @@ export class OrganizationsService extends ItemsService<Organization, string> {
 
 	override async deleteOne(key: PrimaryKey): Promise<PrimaryKey> {
 		// Get organization to check for logo
-		const org = await this.readOne(key);
-		if (org?.logo) {
-			await this.handleLogo(null, org.logo);
+		const org: Item = await this.readOne(key);
+		if (org["logo"]) {
+			await this.handleLogo(null, org["logo"]);
 		}
 		return await super.deleteOne(key);
 	}
 
 	override async deleteMany(keys: PrimaryKey[]): Promise<PrimaryKey[]> {
 		// Get organizations to check for logos
-		const orgs = await this.readMany(keys);
+		const orgs:Item[] = await this.readMany(keys);
 		// Delete all logos
 		for (const org of orgs) {
-			if (org.logo) {
-				await this.handleLogo(null, org.logo);
+			if (org["logo"]) {
+				await this.handleLogo(null, org["logo"]);
 			}
 		}
 		return await super.deleteMany(keys);

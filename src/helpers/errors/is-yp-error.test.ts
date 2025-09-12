@@ -1,4 +1,4 @@
-import { randomAlpha, randomInteger, randomIdentifier } from '../helpers/random/index.js';
+import { randomAlpha, randomInteger, randomIdentifier } from '../random/index.js';
 import { beforeEach, expect, test } from 'vitest';
 import { createError } from './create-error.js';
 import { isYPError } from './is-yp-error.js';

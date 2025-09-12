@@ -541,7 +541,7 @@ router.get(
 		const { error, value } = verifyRegistrationSchema.validate(req.query['token']);
 
 		if (error) {
-			logger.error(`Invalid token: ${value}`, error);
+			logger.error(error, `Invalid token: ${value}`);
 			throw new InvalidTokenError();
 		}
 

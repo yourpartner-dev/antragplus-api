@@ -1,0 +1,33 @@
+import { createOpenAI } from '@ai-sdk/openai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import type { LanguageModel } from 'ai';
+import { useEnv } from '../../helpers/env/index.js';
+
+const env = useEnv();
+
+/**
+ * Configured OpenAI provider with API key from environment
+ */
+export const openai = createOpenAI({
+  apiKey: env['OPENAI_API_KEY'] as string || '',
+});
+
+/**
+ * Configured Google Gemini provider with API key from environment
+ * Gemini has large context window - perfect for document processing
+ */
+export const google = createGoogleGenerativeAI({
+  apiKey: env['GEMINI_API_KEY'] as string || '',
+});
+
+// Export a helper to get the default model
+export function getOpenAIModel(modelName?: string): LanguageModel {
+  const defaultModel = env['OPENAI_MODEL'] as string || 'gpt-4o-mini';
+  return openai(modelName || defaultModel);
+}
+
+// Export helper for grant extraction using Gemini
+export function getGrantExtractionModel(): LanguageModel {
+  const model = env['GEMINI_MODEL'] as string || 'gemini-1.5-pro-latest';
+  return google(model);
+}

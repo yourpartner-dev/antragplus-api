@@ -1,4 +1,4 @@
-import { randomInteger } from '../helpers/random/index.js';
+import { randomInteger } from '../random/index.js';
 import type { EventLoopUtilization, IntervalHistogram } from 'node:perf_hooks';
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 import { memoryUsage } from 'node:process';

@@ -12,7 +12,7 @@ type GetColumnOptions = {
 };
 
 /**
- * Return column prefixed by table. If column includes functions (like `year(date_created)`), the
+ * Return column prefixed by table. If column includes functions (like `year(created_at)`), the
  * column is replaced with the appropriate SQL
  *
  * @param knex Current knex / transaction instance

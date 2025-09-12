@@ -1,6 +1,6 @@
 import { BaseQueue } from '../base-queue.js';
 import { Accountability, SchemaOverview } from '../../../types/index.js';
-import { 
+import {
   QueueName,
   DeadLetterQueueItem
 } from '../types/queue.js';
@@ -61,16 +61,17 @@ export class DeadLetterQueue extends BaseQueue {
 
           // Otherwise, attempt to reprocess based on queue type
           await this.reprocessItem(failedItem);
-          
+
           // If reprocessing succeeded, remove from dead letter queue
           await this.redis.lrem(QueueName.DEAD_LETTER, 1, item);
           retriedCount++;
 
         } catch (error) {
-          this.logger.error('Failed to process dead letter item:', {
+          this.logger.error({
             item,
             error: error
-          });
+          },
+            'Failed to process dead letter item:');
         }
       }
 
@@ -79,7 +80,7 @@ export class DeadLetterQueue extends BaseQueue {
         removed: removedCount,
         retried: retriedCount
       });
-      
+
       return;
     } catch (error) {
       this.logger.error(error, 'Error cleaning up dead letter queue');
@@ -107,7 +108,7 @@ export class DeadLetterQueue extends BaseQueue {
         this.logger.info(`Successfully re-queued item to ${originalQueueName} from DLQ.`);
       } catch (requeueError) {
         this.logger.error(
-          `Failed to re-queue item from DLQ to ${originalQueueName}. Item will remain in DLQ.`, 
+          `Failed to re-queue item from DLQ to ${originalQueueName}. Item will remain in DLQ.`,
           {
             failedItem,
             requeueError
@@ -117,7 +118,7 @@ export class DeadLetterQueue extends BaseQueue {
       }
     } else {
       this.logger.error(
-        `Could not find queue instance for ${originalQueueName} to reprocess item. Item will remain in DLQ.`, 
+        `Could not find queue instance for ${originalQueueName} to reprocess item. Item will remain in DLQ.`,
         { failedItem }
       );
       throw new Error(`Queue instance for ${originalQueueName} not found during DLQ reprocessing.`);

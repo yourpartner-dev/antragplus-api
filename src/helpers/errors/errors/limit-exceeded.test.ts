@@ -1,4 +1,4 @@
-import { randomAlpha, randomInteger } from '../../helpers/random/index.js';
+import { randomAlpha, randomInteger } from '../../random/index.js';
 import { beforeEach, expect, test } from 'vitest';
 import { messageConstructor, type LimitExceededErrorExtensions } from './limit-exceeded.js';
 

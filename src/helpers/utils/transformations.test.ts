@@ -27,6 +27,9 @@ const inputFile = {
 	modified_on: '',
 	focal_point_x: null,
 	focal_point_y: null,
+	created_on: '',
+	tus_id: null,
+	tus_data: null,
 } satisfies File;
 
 describe('resolvePreset', () => {

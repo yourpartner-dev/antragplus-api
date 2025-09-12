@@ -96,19 +96,19 @@ export const WebSocketEvent = z.discriminatedUnion('action', [
 	z.object({
 		action: z.literal('create'),
 		collection: z.string(),
-		payload: z.record(z.any()).optional(),
+		payload: z.record(z.string(), z.any()).optional(),
 		key: zodStringOrNumber,
 	}),
 	z.object({
 		action: z.literal('update'),
 		collection: z.string(),
-		payload: z.record(z.any()).optional(),
+		payload: z.record(z.string(), z.any()).optional(),
 		keys: z.array(zodStringOrNumber),
 	}),
 	z.object({
 		action: z.literal('delete'),
 		collection: z.string(),
-		payload: z.record(z.any()).optional(),
+		payload: z.record(z.string(), z.any()).optional(),
 		keys: z.array(zodStringOrNumber),
 	}),
 ]);

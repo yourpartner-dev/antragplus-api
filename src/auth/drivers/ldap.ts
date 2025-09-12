@@ -408,7 +408,7 @@ export function createLDAPAuthRouter(provider: string): Router {
 	const loginSchema = Joi.object({
 		identifier: Joi.string().required(),
 		password: Joi.string().required(),
-		mode: Joi.string().valid('json', 'session'),
+		mode: Joi.string().valid('cookie', 'json', 'session'),
 		otp: Joi.string(),
 	}).unknown();
 
@@ -454,6 +454,10 @@ export function createLDAPAuthRouter(provider: string): Router {
 
 			if (mode === 'json') {
 				payload.refresh_token = refreshToken;
+			}
+
+			if (mode === 'cookie') {
+				res.cookie(env['REFRESH_TOKEN_COOKIE_NAME'] as string, refreshToken, REFRESH_COOKIE_OPTIONS);
 			}
 
 			if (mode === 'session') {

@@ -5,8 +5,8 @@ export type ContentVersion = {
 	collection: string;
 	item: string;
 	hash: string;
-	date_created: string;
-	date_updated: string | null;
-	user_created: string | null;
-	user_updated: string | null;
+	created_at: string;
+	updated_at: string | null;
+	created_by: string | null;
+	updated_by: string | null;
 };

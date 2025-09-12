@@ -1,7 +1,8 @@
-import { randomInteger } from '../../helpers/random/index.js';
-import type { Range } from '../../storage/storage-manager/index.js';
+import { randomInteger } from '../../random/index.js';
 import { expect, test } from 'vitest';
 import { messageConstructor } from './range-not-satisfiable.js';
+
+type Range = { start: number; end: number };
 
 let range: Range;
 

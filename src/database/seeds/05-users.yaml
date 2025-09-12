@@ -58,12 +58,6 @@ columns:
   last_page:
     type: string
     length: 255
-  organization:
-    type: uuid
-    nullable: true
-    references:
-      table: yp_organizations
-      column: id
   created_at:
     type: timestamp
     nullable: false

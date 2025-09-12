@@ -1,0 +1,78 @@
+import Joi from 'joi';
+
+/**
+ * Validation schemas for chat endpoints
+ */
+
+// Schema for creating a new chat
+export const createChatSchema = Joi.object({
+  messages: Joi.array()
+    .items(
+      Joi.object({
+        role: Joi.string().valid('user', 'assistant', 'system').required(),
+        content: Joi.string().required(),
+      })
+    )
+    .min(1)
+    .required(),
+  context: Joi.object({
+    ngo_id: Joi.string().uuid().optional(),
+    grant_id: Joi.string().uuid().optional(),
+    application_id: Joi.string().uuid().optional(),
+    context_type: Joi.string()
+      .valid('application_edit', 'ngo_onboarding', 'grant_discovery', 'document_generation')
+      .optional(),
+  }).optional(),
+});
+
+// Schema for updating a chat
+export const updateChatSchema = Joi.object({
+  title: Joi.string().min(1).max(255).optional(),
+  status: Joi.string().valid('active', 'archived', 'deleted').optional(),
+  visibility: Joi.string().valid('private', 'organization', 'public').optional(),
+  metadata: Joi.object().optional(),
+});
+
+// Schema for adding a message to a chat
+export const addMessageSchema = Joi.object({
+  content: Joi.string().required(),
+  role: Joi.string().valid('user', 'assistant').optional().default('user'),
+  attachments: Joi.array()
+    .items(
+      Joi.object({
+        file_id: Joi.string().uuid().optional(),
+        url: Joi.string().uri().optional(),
+        name: Joi.string().optional(),
+        type: Joi.string().optional(),
+        size: Joi.number().optional(),
+      })
+    )
+    .optional(),
+  context_type: Joi.string()
+    .valid('application_edit', 'ngo_onboarding', 'grant_discovery', 'document_generation')
+    .optional(),
+  metadata: Joi.object().optional(),
+});
+
+// Schema for listing chats
+export const listChatsSchema = Joi.object({
+  limit: Joi.number().integer().min(1).max(100).default(20),
+  offset: Joi.number().integer().min(0).default(0),
+  sort: Joi.string().valid('created_at', '-created_at', 'updated_at', '-updated_at').default('-created_at'),
+  filter: Joi.object({
+    status: Joi.string().valid('active', 'archived', 'deleted').optional(),
+    context_type: Joi.string()
+      .valid('application_edit', 'ngo_onboarding', 'grant_discovery', 'document_generation')
+      .optional(),
+    ngo_id: Joi.string().uuid().optional(),
+    grant_id: Joi.string().uuid().optional(),
+    application_id: Joi.string().uuid().optional(),
+  }).optional(),
+});
+
+// Schema for getting messages
+export const getMessagesSchema = Joi.object({
+  limit: Joi.number().integer().min(1).max(100).default(50),
+  offset: Joi.number().integer().min(0).default(0),
+  order: Joi.string().valid('asc', 'desc').default('asc'),
+});

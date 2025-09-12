@@ -214,7 +214,7 @@ describe('Integration Tests', () => {
 							      "sort": {
 							        "description": "How to sort the returned items.",
 							        "example": [
-							          "-date_created",
+							          "-created_at",
 							        ],
 							        "items": {
 							          "type": "string",
@@ -313,7 +313,8 @@ describe('Integration Tests', () => {
 
 						const spec = await service.oas.generate();
 
-						const targetSchema = spec.paths['/items/test_table']?.post?.requestBody?.content['application/json'].schema;
+						const requestBody = spec.paths['/items/test_table']?.post?.requestBody;
+						const targetSchema = requestBody && 'content' in requestBody ? requestBody.content?.['application/json']?.schema : undefined;
 
 						expect(targetSchema).toHaveProperty('oneOf');
 						expect(targetSchema).not.toHaveProperty('type');

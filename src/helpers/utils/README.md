@@ -28,7 +28,7 @@ A significant portion of these helpers revolves around constructing, sanitizing,
 
 *   **`filter`**: Defines conditions for selecting data.
     *   **Structure**: A nested object where keys are field names and values specify the operator and comparison value.
-    *   **Targeting Fields**: Field names can be direct fields of the queried collection or use **dot-notation** (e.g., `relational_field.nested_field.target_field`) to target fields in related collections. Functions can also be applied (e.g., `year(date_created)`).
+    *   **Targeting Fields**: Field names can be direct fields of the queried collection or use **dot-notation** (e.g., `relational_field.nested_field.target_field`) to target fields in related collections. Functions can also be applied (e.g., `year(created_at)`).
     *   **Logical Operators**:
         *   `_and: [{...}, {...}]`: All nested filter objects must be true.
         *   `_or: [{...}, {...}]`: At least one nested filter object must be true.
@@ -113,7 +113,7 @@ This allows for precise and efficient data retrieval and filtering based on rela
     *   Parses complex filter objects provided in API queries.
     *   Handles dynamic variables within filters (e.g., `$NOW`, `$CURRENT_USER`, `$CURRENT_ROLE`).
     *   Restructures logical operators (`_and`, `_or`, `_not`) into a standardized format for further processing.
-    *   Parses and prepares field functions within filters (e.g., `year(date_created)` via `parse-filter-key.ts`).
+    *   Parses and prepares field functions within filters (e.g., `year(created_at)` via `parse-filter-key.ts`).
 
 2.  **`sanitize-query.ts`** (For all query parameters):
     *   Takes a raw query object from an API request and sanitizes its various parameters (`limit`, `fields`, `groupBy`, `aggregate`, `sort`, `filter`, `offset`, `page`, `meta`, `search`, `deep`, `alias`, etc.).
@@ -211,7 +211,7 @@ This allows for precise and efficient data retrieval and filtering based on rela
 
 -   **Data Parsing & Validation**:
     *   `parse-filter-function-path.ts`: Transforms a function call within a filter path string (e.g., `a.b.func(c.d)`) to ensure the function is applied to the last segment (e.g., `a.b.c.func(d)`). Used for standardizing function path representations in queries.
-    *   `parse-filter-key.ts`: Parses a filter key string (e.g., `year(date_created)` or `title`) to separate the field name (`date_created`, `title`) from an optional function name (`year`, `undefined`).
+    *   `parse-filter-key.ts`: Parses a filter key string (e.g., `year(created_at)` or `title`) to separate the field name (`created_at`, `title`) from an optional function name (`year`, `undefined`).
     *   `parse-json.ts`: Safely parses JSON strings, specifically preventing prototype pollution attacks by stripping `__proto__` properties during parsing if detected in the input string.
     *   `parse-numeric-string.ts`: Robustly parses a string into a numeric value (number or BigInt), returning `null` if the string isn't a strict representation of a decimal number. Handles numbers outside JavaScript's safe integer range by attempting BigInt conversion and includes a round-trip string conversion check for strictness.
     *   `require-yaml.ts`: Synchronously reads and parses a YAML file into a JavaScript object using `fs-extra` and `js-yaml`.

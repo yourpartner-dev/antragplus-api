@@ -6,7 +6,7 @@ const testCases = [
 	{ key: ' ', expected: { fieldName: '' } },
 	// should only treat as function when field available
 	{ key: 'fn( )', expected: { fieldName: 'fn( )' } },
-	{ key: 'year(date_created)', expected: { fieldName: 'date_created', functionName: 'year' } },
+	{ key: 'year(created_at)', expected: { fieldName: 'created_at', functionName: 'year' } },
 	{ key: ' example ( field )', expected: { fieldName: 'field', functionName: 'example' } },
 ];
 

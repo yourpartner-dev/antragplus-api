@@ -104,15 +104,106 @@ The queue management system is structured around a few key components:
 
 ## How to Create a New (Specific) Queue
 
-*(This section describes the pattern, assuming client-specific implementations are added later.)*
+To create a new queue implementation that follows the established pattern:
 
-1.  **Define Job Payload:** Create a TypeScript interface in `src/services/queues/types/` for the data your new queue will handle.
-2.  **Create Implementation:** Inside the `src/services/queues/implementations/` directory, create a new file (e.g., `my-specific-task-queue.ts`).
-    *   Define a class that extends `BaseQueue` (or uses its a similar compositional pattern).
-    *   Implement the `processJob(payload: MySpecificTaskPayload): Promise<void>` method with the actual business logic for the task.
-    *   Set any specific queue options (name, retries, etc.).
-3.  **Register with QueueManager:** Update `QueueManager` to know about your new queue. This might involve adding a method to get an instance of your new queue, or a more dynamic registration mechanism.
-4.  **Produce Jobs:** In your application code where the task needs to be initiated, get your new queue from the `QueueManager` and call its `addJob` method.
-5.  **Ensure Workers Process It:** Ensure your worker setup is configured to listen to and process jobs from this new queue name.
+1.  **Define Queue Name:** Add your queue name to the `QueueName` enum in `src/services/queues/types/queue.ts`:
+    ```typescript
+    export enum QueueName {
+      MY_NEW_QUEUE = 'my-new-queue',
+      // ... other queues
+    }
+    ```
+
+2.  **Define Job Payload:** Create a TypeScript interface for your queue's payload data, either in the implementation file or in `types/queue.ts`.
+
+3.  **Create Implementation:** Inside `src/services/queues/implementations/`, create a new file (e.g., `my-new-queue.ts`):
+    ```typescript
+    import { BaseQueue } from '../base-queue.js';
+    import { QueueName } from '../types/queue.js';
+    import type { Accountability, SchemaOverview } from '../../../types/index.js';
+    
+    export interface MyJobPayload {
+      // Define your job data structure
+      data: string;
+      // Include accountability and schema for processing context
+      accountability: Accountability | null;
+      schema: SchemaOverview;
+    }
+    
+    export class MyNewQueue extends BaseQueue {
+      constructor(schema: SchemaOverview, accountability: Accountability | null) {
+        super(QueueName.MY_NEW_QUEUE, schema, accountability);
+        this.maxRetries = 3; // Set your retry limit
+      }
+      
+      // Public method for external services to add jobs
+      public async addMyJobs(jobs: Array<{data: string}>): Promise<void> {
+        const items = jobs.map(job => ({
+          ...job,
+          accountability: this.accountability,
+          schema: this.schema
+        }));
+        
+        await this.addBatchToQueue(items);
+      }
+      
+      // Required implementation of abstract method from BaseQueue
+      public async process(): Promise<void> {
+        let job;
+        
+        while ((job = await this.getFromQueue())) {
+          try {
+            const payload = job as MyJobPayload;
+            const lockKey = `my-queue:${payload.data}`;
+            
+            await this.withQueueItemLock(lockKey, async () => {
+              // Check retry count
+              const retryCount = await this.getRetryCount(lockKey);
+              if (retryCount > this.maxRetries) {
+                this.logger.warn(`Max retries exceeded for job: ${lockKey}`);
+                await this.clearRetryCount(lockKey);
+                return;
+              }
+              
+              try {
+                // Process the job
+                await this.processMyJob(payload);
+                await this.clearRetryCount(lockKey);
+              } catch (error) {
+                // Handle retry logic
+                await this.handleRetry(lockKey, retryCount, async () => {
+                  await this.addMyJobs([{data: payload.data}]);
+                }, error);
+              }
+            });
+          } catch (error) {
+            this.logger.error(error, `Failed to process job`);
+            await this.handleFailedItem(job, error as Error);
+          }
+        }
+      }
+      
+      private async processMyJob(payload: MyJobPayload): Promise<void> {
+        // Implement your actual job processing logic here
+        this.logger.info(`Processing job with data: ${payload.data}`);
+        // ... your business logic
+      }
+    }
+    ```
+
+4.  **Register with QueueManager:** Update `queue-manager.ts`:
+    *   Add a private property for your queue
+    *   Initialize it in the constructor
+    *   Add it to `processAllQueues()` if needed
+    *   Add it to `monitorQueueSizes()`
+    *   Add a case in `getQueue()` method
+    *   Create a public getter method
+
+5.  **Use the Queue:** In your application code:
+    ```typescript
+    const queueManager = new QueueManager(schema, accountability);
+    const myQueue = queueManager.getMyNewQueue();
+    await myQueue.addMyJobs([{data: 'example'}]);
+    ```
 
 This generic queue system provides a scalable and resilient foundation for handling asynchronous operations within your application. 

@@ -61,7 +61,7 @@ properties:
     nullable: true
     description: Official registration number of the organization.
     example: 'HRB 12345'
-  date_created:
+  created_at:
     type: string
     format: date-time
     nullable: true

@@ -4,6 +4,9 @@ import { Accountability, SchemaOverview } from '../../../types/index.js';
  */
 export enum QueueName {
   DEAD_LETTER = 'dead-letter-queue',
+  EMBEDDING = 'embedding-queue',
+  DOCUMENT_PARSING = 'document-parsing-queue',
+  GRANT_EXTRACTION = 'grant-extraction-queue',
 }
 
 /**

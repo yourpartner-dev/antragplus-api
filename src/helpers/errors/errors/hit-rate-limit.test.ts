@@ -1,4 +1,4 @@
-import { randomInteger } from '../../helpers/random/index.js';
+import { randomInteger } from '../../random/index.js';
 import { expect, test, vi } from 'vitest';
 import { messageConstructor } from './hit-rate-limit.js';
 

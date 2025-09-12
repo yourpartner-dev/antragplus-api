@@ -124,7 +124,7 @@ export class MailService {
 			.first();
 
 		return {
-			projectName: projectInfo?.project_name || 'Argumed',
+			projectName: projectInfo?.project_name || 'YourPartner',
 			projectColor: projectInfo?.project_color || '#75a9d6',
 			projectUrl: projectInfo?.project_url || env['PUBLIC_URL'] as string || '',
 			projectLogo: this.getProjectLogoURL(projectInfo?.project_logo, env['PUBLIC_URL'] as string),
