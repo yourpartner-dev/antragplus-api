@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "dist/start.js",
+      "src": "package.json",
       "use": "@vercel/node@3",
       "config": {
         "runtime": "nodejs22.x"
