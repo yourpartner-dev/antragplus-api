@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "dist/start.js",
+      "use": "@vercel/node@3",
+      "config": {
+        "runtime": "nodejs22.x"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "dist/start.js"
+    }
+  ],
+  "buildCommand": "pnpm install && pnpm run build",
+  "installCommand": "pnpm install"
+}

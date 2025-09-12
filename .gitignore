@@ -22,6 +22,7 @@ pnpm-workspace.yaml
 
 # Dotenv configs
 .env
+.env.QA
 
 # Logs
 npm-debug.log

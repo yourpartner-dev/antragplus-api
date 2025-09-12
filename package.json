@@ -59,6 +59,7 @@
 		"@tus/server": "1.6.0",
 		"@tus/utils": "0.2.0",
 		"@types/cookie": "0.6.0",
+		"@vercel/blob": "^1.1.1",
 		"ai": "^5.0.34",
 		"argon2": "0.40.3",
 		"async": "3.2.5",
@@ -194,6 +195,7 @@
 		"rollup": "4.17.2",
 		"tmp": "^0.2.5",
 		"tsx": "4.16.5",
+		"typescript": "5.5.4",
 		"vitest": "1.5.3"
 	},
 	"optionalDependencies": {
@@ -207,6 +209,6 @@
 		"tedious": "18.2.0"
 	},
 	"engines": {
-		"node": ">=18.17.0"
+		"node": "22.16.0"
 	}
 }
