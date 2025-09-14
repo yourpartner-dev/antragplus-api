@@ -1,23 +1,14 @@
 {
-  "version": 2,
   "buildCommand": "npm run vercel-build",
-  "builds": [
-    {
-      "src": "dist/start.js",
-      "use": "@vercel/node",
-      "config": {
-        "maxLambdaSize": "50mb"
-      }
-    }
-  ],
+  "outputDirectory": ".",
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "/dist/start.js"
+      "dest": "/api/index.js"
     }
   ],
   "env": {
     "NODE_ENV": "production"
   },
-  "framework": null
+  "regions": ["fra1"]
 }
