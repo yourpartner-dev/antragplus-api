@@ -41,11 +41,18 @@ echo "✅ Building with Node.js $NODE_VERSION and TypeScript $TS_VERSION"
 echo "🔧 Installing build dependencies with npm (fallback for registry issues)..."
 npm install --no-save typescript@5.5.4 copyfiles
 
+# Verify copyfiles is available
+echo "🔍 Verifying copyfiles installation..."
+npx copyfiles --version || echo "❌ copyfiles not available"
+
 # Run the build directly in build.sh
 echo "🔨 Running TypeScript compilation..."
 npx tsc --project tsconfig.prod.json
 
 echo "📁 Copying template files..."
 npx copyfiles "src/**/*.{yaml,liquid}" -u 1 dist
+
+echo "🔍 Logging contents of /var/task/dist/helpers/system-data/collections/..."
+ls -la /var/task/dist/helpers/system-data/collections/ || echo "❌ Directory does not exist"
 
 echo "✅ Build completed successfully"
