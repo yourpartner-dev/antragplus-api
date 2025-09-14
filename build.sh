@@ -37,11 +37,15 @@ fi
 echo "✅ Version requirements satisfied"
 echo "✅ Building with Node.js $NODE_VERSION and TypeScript $TS_VERSION"
 
+# Ensure we have the required build tools
+echo "🔧 Installing build dependencies..."
+pnpm add -D typescript@5.5.4 copyfiles
+
 # Run the build directly in build.sh
 echo "🔨 Running TypeScript compilation..."
-npx tsc --project tsconfig.prod.json
+pnpm exec tsc --project tsconfig.prod.json
 
 echo "📁 Copying template files..."
-npx copyfiles "src/**/*.{yaml,liquid}" -u 1 dist
+pnpm exec copyfiles "src/**/*.{yaml,liquid}" -u 1 dist
 
 echo "✅ Build completed successfully"
