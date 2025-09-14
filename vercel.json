@@ -5,7 +5,7 @@
       "src": "package.json",
       "use": "@vercel/node@3",
       "config": {
-        "runtime": "nodejs22.x"
+        "runtime": "nodejs22.16.0"
       }
     }
   ],
@@ -15,6 +15,7 @@
       "dest": "dist/start.js"
     }
   ],
-  "buildCommand": "pnpm install && pnpm run build",
-  "installCommand": "pnpm install"
+  "buildCommand": "pnpm install --include=dev && pnpm run build",
+  "installCommand": "pnpm install --include=dev",
+  "outputDirectory": "dist"
 }
