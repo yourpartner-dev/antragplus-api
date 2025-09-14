@@ -1,7 +1,7 @@
 import type { BaseCollectionMeta, DataCollectionMeta } from '../types.js';
 import { loadYamlFile } from '../load-yaml.js';
 
-const systemData = loadYamlFile('./collections.yaml');
+const systemData = loadYamlFile('./collections/collections.yaml');
 export const systemCollectionRows = (systemData['data'] as DataCollectionMeta[]).map(
 	(row) =>
 		({
