@@ -18,6 +18,6 @@
   "env": {
     "NODE_ENV": "production"
   },
-  "buildCommand": "./build.sh",
+  "buildCommand": "./build.sh && cp -r dist api/",
   "framework": null
 }
