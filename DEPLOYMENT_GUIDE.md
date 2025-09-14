@@ -56,16 +56,17 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 
 ### 4. Deploy to Cloud Run with Environment Variables
 ```bash
-gcloud run deploy antragplus-api \
-  --image europe-west3-docker.pkg.dev/antragplus-472111/antragplus/api:1.0.0 \
-  --platform managed \
-  --region europe-west3 \
-  --allow-unauthenticated \
-  --port 8055 \
-  --memory 4Gi \
-  --cpu 4 \
-  --env-vars-file .env.cloudrun.yaml
-  --network default --subnet default --vpc-egress private-ranges-only
+ gcloud run deploy antragplus-api \
+    --image europe-west3-docker.pkg.dev/antragplus-472111/antragplus/api:1.0.1 \
+    --region europe-west3 \
+    --allow-unauthenticated \
+    --port 8055 \
+    --memory 4Gi \
+    --cpu 4 \
+    --env-vars-file .env.cloudrun.yaml \
+    --network default \
+    --subnet default \
+    --vpc-egress private-ranges-only
 ```
 
 ### 6. Update Environment Variables (if needed)
