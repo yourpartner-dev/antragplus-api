@@ -23,6 +23,8 @@ pnpm-workspace.yaml
 # Dotenv configs
 .env
 .env.QA
+.env.cloudrun.yaml
+antragplus-472111-309366383e4e.json
 
 # Logs
 npm-debug.log

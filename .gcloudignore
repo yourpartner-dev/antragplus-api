@@ -1,0 +1,28 @@
+# Ignore development files
+.git
+.gitignore
+.github/
+README.md
+.env*
+.vscode/
+.DS_Store
+
+# Ignore node modules (they'll be installed during build)
+node_modules/
+
+# Ignore build artifacts that will be regenerated
+dist/
+
+# Ignore test files
+*.test.js
+*.test.ts
+__tests__/
+coverage/
+
+# Ignore logs
+logs/
+*.log
+
+# Ignore temporary files
+tmp/
+temp/

@@ -31,7 +31,7 @@ COPY . .
 RUN pnpm run build
 
 # Prune devDependencies to keep node_modules lean for production
-RUN pnpm prune --prod
+RUN CI=true pnpm prune --prod
 
 # Stage 2: Production Stage
 FROM node:22.16.0-bullseye-slim AS runtime
@@ -60,6 +60,9 @@ COPY --from=builder /app/node_modules ./node_modules
 # Copy built files from the builder stage
 COPY --from=builder /app/dist ./dist
 
+# Copy storage service account key
+COPY antragplus-472111-309366383e4e.json ./antragplus-472111-309366383e4e.json
+
 # Ensure the 'uploads' directory exists
 RUN mkdir -p /app/uploads
 
@@ -70,5 +73,5 @@ USER app
 # Expose the application port
 EXPOSE 8055
 
-# Start the application
-CMD ["node", "dist/start.js"]
+# Start the application with database initialization
+CMD ["sh", "-c", "node dist/cli/run.js bootstrap && node dist/start.js"]

@@ -1,13 +1,14 @@
 version: "3.8"
 
 services:
-  yp:
+  antragplus-api:
     build:
       context: .
       dockerfile: Dockerfile
       platforms:
+        - "linux/amd64"
         - "linux/arm64"
-    image: pimagroupregistery.azurecr.io/api:1.0.0
+    image: europe-west3-docker.pkg.dev/antragplus-472111/antragplus/api:1.0.1
     ports:
       - "8055:8055"
     volumes:
