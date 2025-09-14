@@ -13,11 +13,12 @@
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "/dist/start.js"
+      "dest": "/api/index.js"
     }
   ],
   "env": {
     "NODE_ENV": "production"
   },
+  "regions": ["fra1"],
   "framework": null
 }
