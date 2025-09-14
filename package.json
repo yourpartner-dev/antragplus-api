@@ -24,7 +24,7 @@
 	],
 	"scripts": {
 		"build": "tsc --project tsconfig.prod.json && copyfiles \"src/**/*.{yaml,liquid}\" -u 1 dist",
-		"vercel-build": "chmod +x ./build.sh && ./build.sh && cp -r dist api/",
+		"vercel-build": "chmod +x ./build.sh && ./build.sh",
 		"cli": "NODE_ENV=development SERVE_APP=false tsx src/cli/run.ts",
 		"dev": "NODE_ENV=development SERVE_APP=false tsx watch --ignore extensions --clear-screen=false src/start.ts",
 		"start": "NODE_ENV=production SERVE_APP=true node dist/start.js",
