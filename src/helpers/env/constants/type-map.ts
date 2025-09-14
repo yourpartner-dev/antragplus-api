@@ -33,4 +33,7 @@ export const TYPE_MAP: Record<string, EnvType> = {
 	LOG_HTTP_IGNORE_PATHS: 'array',
 
 	REDIS_ENABLED: 'boolean',
+
+	SESSION_COOKIE_SECURE: 'boolean',
+	REFRESH_TOKEN_COOKIE_SECURE: 'boolean',
 } as const;

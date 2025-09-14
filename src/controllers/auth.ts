@@ -135,8 +135,6 @@ router.post(
 		}
 
 		if (mode === 'session') {
-			console.error("omid")
-			console.error(SESSION_COOKIE_OPTIONS)
 			res.cookie(env['SESSION_COOKIE_NAME'] as string, accessToken, SESSION_COOKIE_OPTIONS);
 		}
 
@@ -181,8 +179,6 @@ router.post(
 		}
 
 		if (req.cookies[env['SESSION_COOKIE_NAME'] as string]) {
-			console.error("omid")
-			console.error(SESSION_COOKIE_OPTIONS)
 			res.clearCookie(env['SESSION_COOKIE_NAME'] as string, SESSION_COOKIE_OPTIONS);
 		}
 
