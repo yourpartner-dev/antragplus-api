@@ -1,16 +1,15 @@
 {
   "buildCommand": "npm run vercel-build",
-  "outputDirectory": ".",
-  "builds": [
-    {
-      "src": "src/start.ts",
-      "use": "@vercel/node"
+  "outputDirectory": "dist",
+  "functions": {
+    "start.js": {
+      "runtime": "nodejs22.x"
     }
-  ],
+  },
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "/dist/start.js"
+      "dest": "/start.js"
     }
   ],
   "env": {
