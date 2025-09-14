@@ -23,7 +23,7 @@
 		"dist"
 	],
 	"scripts": {
-		"build": "tsc --project tsconfig.prod.json && copyfiles \"src/**/*.{yaml,liquid}\" -u 1 dist",
+		"build": "pnpm exec tsc --project tsconfig.prod.json && copyfiles \"src/**/*.{yaml,liquid}\" -u 1 dist",
 		"vercel-build": "chmod +x ./build.sh && ./build.sh && cp -r dist api/",
 		"cli": "NODE_ENV=development SERVE_APP=false tsx src/cli/run.ts",
 		"dev": "NODE_ENV=development SERVE_APP=false tsx watch --ignore extensions --clear-screen=false src/start.ts",
