@@ -53,6 +53,10 @@ echo "📁 Copying template files..."
 npx copyfiles "src/**/*.{yaml,liquid}" -u 1 dist
 
 echo "🚀 Running YP bootstrap (setup and migrations)..."
+echo "🔍 Checking environment variables..."
+echo "NODE_ENV: $NODE_ENV"
+echo "DATABASE_URL set: $([ -n "$DATABASE_URL" ] && echo "YES" || echo "NO")"
+echo "Environment variables available: $(env | grep -E '^(DATABASE|DB|POSTGRES|YP)_' | wc -l) variables"
 pnpm run yp:bootstrap
 
 echo "✅ Build completed successfully"
