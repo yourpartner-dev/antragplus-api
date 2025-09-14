@@ -3,7 +3,7 @@
   "outputDirectory": ".",
   "builds": [
     {
-      "src": "dist/start.js",
+      "src": "src/start.ts",
       "use": "@vercel/node"
     }
   ],
