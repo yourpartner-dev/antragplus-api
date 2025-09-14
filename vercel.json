@@ -1,9 +1,8 @@
 {
   "version": 2,
-  "buildCommand": "npm run vercel-build",
   "builds": [
     {
-      "src": "dist/start.js",
+      "src": "dist/index.js",
       "use": "@vercel/node",
       "config": {
         "maxLambdaSize": "50mb"
@@ -13,11 +12,12 @@
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "/dist/start.js"
+      "dest": "/dist/index.js"
     }
   ],
   "env": {
     "NODE_ENV": "production"
   },
+  "buildCommand": "./build.sh",
   "framework": null
 }
