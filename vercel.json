@@ -1,21 +1,30 @@
 {
   "version": 2,
+  "functions": {
+    "api/index.js": {
+      "runtime": "nodejs22.x",
+      "maxDuration": 30
+    }
+  },
   "builds": [
     {
-      "src": "package.json",
-      "use": "@vercel/node@3",
+      "src": "api/index.js",
+      "use": "@vercel/node",
       "config": {
-        "runtime": "nodejs22.16.0"
+        "maxLambdaSize": "50mb"
       }
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "dist/start.js"
+      "dest": "/api/index.js"
     }
   ],
-  "buildCommand": "pnpm install --include=dev && pnpm run build",
-  "installCommand": "pnpm install --include=dev",
-  "outputDirectory": "dist"
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "buildCommand": "./build.sh",
+  "outputDirectory": "./dist",
+  "framework": null
 }

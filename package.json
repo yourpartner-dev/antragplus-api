@@ -210,5 +210,10 @@
 	},
 	"engines": {
 		"node": "22.16.0"
+	},
+	"pnpm": {
+		"overrides": {
+			"typescript": "5.5.4"
+		}
 	}
 }

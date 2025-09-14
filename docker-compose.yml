@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
       platforms:
         - "linux/arm64"
-    image: pimagroupregistery.azurecr.io/api:0.4.5
+    image: pimagroupregistery.azurecr.io/api:1.0.0
     ports:
       - "8055:8055"
     volumes:

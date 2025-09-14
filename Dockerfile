@@ -1,5 +1,5 @@
 # Stage 1: Build Stage
-FROM node:18.17.0-bullseye-slim AS builder
+FROM node:22.16.0-bullseye-slim AS builder
 
 ENV NODE_OPTIONS=--max-old-space-size=8192
 # Set working directory
@@ -34,7 +34,7 @@ RUN pnpm run build
 RUN pnpm prune --prod
 
 # Stage 2: Production Stage
-FROM node:18.17.0-bullseye-slim AS runtime
+FROM node:22.16.0-bullseye-slim AS runtime
 
 # Set timezone environment variable
 ENV TZ=Europe/Berlin
