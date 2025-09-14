@@ -59,7 +59,13 @@ find dist -name "*.yaml" -o -name "*.liquid" || echo "❌ No YAML/liquid files f
 echo "🔍 Checking if dist directory structure exists..."
 ls -la dist/helpers/system-data/ || echo "❌ dist/helpers/system-data/ does not exist"
 
-echo "🔍 Logging contents of /var/task/dist/helpers/system-data/collections/..."
-ls -la /var/task/dist/helpers/system-data/collections/ || echo "❌ Directory does not exist"
+echo "🔍 Logging current working directory and file paths..."
+echo "Current working directory: $(pwd)"
+echo "Contents of dist/helpers/system-data/collections/:"
+ls -la dist/helpers/system-data/collections/ || echo "❌ Local dist directory does not exist"
+echo "Contents of /var/task/dist/helpers/system-data/collections/:"
+ls -la /var/task/dist/helpers/system-data/collections/ || echo "❌ Runtime directory does not exist"
+echo "Full path resolution test:"
+ls -la "$(pwd)/dist/helpers/system-data/collections/" || echo "❌ Full path does not exist"
 
 echo "✅ Build completed successfully"
