@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "buildCommand": "npm run vercel-build",
   "builds": [
     {
       "src": "dist/index.js",
@@ -12,12 +13,11 @@
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "/dist/index.js"
+      "dest": "/dist/start.js"
     }
   ],
   "env": {
     "NODE_ENV": "production"
   },
-  "buildCommand": "./build.sh",
   "framework": null
 }
