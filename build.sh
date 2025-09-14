@@ -50,7 +50,14 @@ echo "🔨 Running TypeScript compilation..."
 npx tsc --project tsconfig.prod.json
 
 echo "📁 Copying template files..."
-npx copyfiles "src/**/*.{yaml,liquid}" -u 1 dist
+echo "🔍 First, let's see what YAML files exist in src/..."
+find src -name "*.yaml" -o -name "*.liquid" || echo "❌ No YAML/liquid files found"
+echo "🔍 Running copyfiles with verbose output..."
+npx copyfiles "src/**/*.{yaml,liquid}" -u 1 dist --verbose || echo "❌ copyfiles failed"
+echo "🔍 Checking what was actually copied to dist/..."
+find dist -name "*.yaml" -o -name "*.liquid" || echo "❌ No YAML/liquid files found in dist"
+echo "🔍 Checking if dist directory structure exists..."
+ls -la dist/helpers/system-data/ || echo "❌ dist/helpers/system-data/ does not exist"
 
 echo "🔍 Logging contents of /var/task/dist/helpers/system-data/collections/..."
 ls -la /var/task/dist/helpers/system-data/collections/ || echo "❌ Directory does not exist"
