@@ -16,7 +16,17 @@ const __dirname = path.dirname(__filename);
  */
 export function loadYamlFile(fileName: string): any {
   try {
-    const filePath = path.resolve(__dirname, fileName);
+    // First try relative to current module directory
+    let filePath = path.resolve(__dirname, fileName);
+
+    if (!fs.existsSync(filePath)) {
+      // Try alternative path for serverless environments
+      const altPath = path.resolve(process.cwd(), 'dist', 'helpers', 'system-data', fileName);
+      if (fs.existsSync(altPath)) {
+        filePath = altPath;
+      }
+    }
+
     const fileContents = fs.readFileSync(filePath, 'utf8');
     return yaml.load(fileContents);
   } catch (error) {
