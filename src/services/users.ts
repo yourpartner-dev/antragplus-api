@@ -363,21 +363,7 @@ export class UsersService extends ItemsService {
 						userData[key] = params[key];
 					});
 				}
-				if(!userData['language']) {
-				
-					const settings = await this.knex
-						.select('language')
-						.from('yp_settings')
-						.where('organization_id', userData['organization_id'] ?? null)
-						.first();
-	
-					if (settings?.language) {
-						userData['language'] = settings.language;
-					} else {
-						userData['language'] = 'en-US';
-					}
-				}
-
+		
 				//TODO: review if this is the best way to do this
 				users.push(await this.createOne(userData, opts));
 				

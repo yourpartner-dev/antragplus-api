@@ -66,7 +66,7 @@ export const REFRESH_COOKIE_OPTIONS: CookieOptions = {
 	httpOnly: true,
 	domain: process.env['REFRESH_TOKEN_COOKIE_DOMAIN'] || DEFAULTS.REFRESH_TOKEN_COOKIE_DOMAIN as string | undefined,
 	maxAge: getMilliseconds(process.env['REFRESH_TOKEN_TTL'] || DEFAULTS.REFRESH_TOKEN_TTL),
-	secure: Boolean(process.env['REFRESH_TOKEN_COOKIE_SECURE'] || DEFAULTS.REFRESH_TOKEN_COOKIE_SECURE),
+	secure: process.env['REFRESH_TOKEN_COOKIE_SECURE'] ? process.env['REFRESH_TOKEN_COOKIE_SECURE'] === 'true' : DEFAULTS.REFRESH_TOKEN_COOKIE_SECURE,
 	sameSite: (process.env['REFRESH_TOKEN_COOKIE_SAME_SITE'] || (DEFAULTS.REFRESH_TOKEN_COOKIE_SAME_SITE || 'strict')) as 'lax' | 'strict' | 'none',
 };
 
@@ -74,7 +74,7 @@ export const SESSION_COOKIE_OPTIONS: CookieOptions = {
 	httpOnly: true,
 	domain: process.env['SESSION_COOKIE_DOMAIN'] || DEFAULTS.SESSION_COOKIE_DOMAIN as string | undefined,
 	maxAge: getMilliseconds(process.env['SESSION_COOKIE_TTL'] || DEFAULTS.SESSION_COOKIE_TTL || DEFAULTS.REFRESH_TOKEN_TTL),
-	secure: Boolean(process.env['SESSION_COOKIE_SECURE'] || DEFAULTS.SESSION_COOKIE_SECURE !== undefined ? DEFAULTS.SESSION_COOKIE_SECURE : DEFAULTS.REFRESH_TOKEN_COOKIE_SECURE),
+	secure: process.env['SESSION_COOKIE_SECURE'] ? process.env['SESSION_COOKIE_SECURE'] === 'true' : DEFAULTS.SESSION_COOKIE_SECURE,
 	sameSite: (process.env['SESSION_COOKIE_SAME_SITE'] || DEFAULTS.SESSION_COOKIE_SAME_SITE || DEFAULTS.REFRESH_TOKEN_COOKIE_SAME_SITE || 'lax') as 'lax' | 'strict' | 'none',
 };
 
