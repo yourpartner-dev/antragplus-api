@@ -96,7 +96,7 @@ async function main() {
         const users = await db('users').select('id', 'username').where('status', 'active');
         console.log('Active users:', users);
     } catch (error) {
-        console.error('Error fetching users:', error);
+        console.error(error, 'Error fetching users');
     }
 
     // Example: Using schema inspector

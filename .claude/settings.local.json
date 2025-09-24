@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Read(//Users/omidsajedi/Documents/Workspace.NoSynch/antragplus/claude-dir/**)"
+      "Read(//Users/omidsajedi/Documents/Workspace.NoSynch/antragplus/claude-dir/**)",
+      "Read(//Users/omidsajedi/Documents/Workspace.NoSynch/pima_group/pima_one/api/src/helpers/utils/**)",
+      "Read(//Users/omidsajedi/Documents/Workspace.NoSynch/pima_group/pima_one/api/src/services/queues/implementations/**)",
+      "Read(//Users/omidsajedi/Documents/Workspace.NoSynch/pima_group/pima_one/api/src/services/queues/**)",
+      "Read(//Users/omidsajedi/Documents/Workspace.NoSynch/pima_group/pima_one/api/src/redis/utils/**)",
+      "Read(//Users/omidsajedi/Documents/Workspace.NoSynch/pima_group/pima_one/api/src/redis/**)",
+      "Read(//Users/omidsajedi/Documents/Workspace.NoSynch/pima_group/pima_one/api/**)",
+      "WebFetch(domain:docs.searxng.org)",
+      "Read(//Users/omidsajedi/Documents/Workspace.NoSynch/antragplus/**)"
     ],
     "deny": [],
     "ask": []

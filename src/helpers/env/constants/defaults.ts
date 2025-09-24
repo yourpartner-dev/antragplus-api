@@ -77,6 +77,8 @@ export const DEFAULTS = {
 	CACHE_VALUE_MAX_SIZE: false,
 	CACHE_SKIP_ALLOWED: false,
 
+	REDIS_STREAMS_ENABLED: true,
+
 	AUTH_PROVIDERS: '',
 	AUTH_DISABLE_DEFAULT: false,
 

@@ -36,4 +36,6 @@ export const TYPE_MAP: Record<string, EnvType> = {
 
 	SESSION_COOKIE_SECURE: 'boolean',
 	REFRESH_TOKEN_COOKIE_SECURE: 'boolean',
+
+	REDIS_STREAMS_ENABLED: 'boolean',
 } as const;

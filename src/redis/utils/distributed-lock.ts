@@ -6,16 +6,18 @@ const logger = useLogger();
 export async function withLock<T>(
     lockKey: string,
     operation: () => Promise<T>,
-    timeoutMs: number = 1000
+    timeoutMs: number = 30000
 ): Promise<T | null> {
     const redis = useRedis();
     const lockValue = `${process.pid}:${Date.now()}`;
     const fullLockKey = `lock:measure:${lockKey}`;
-    
+
     // Start time tracking
     const startTime = Date.now();
 
-    const acquired = await redis.set(fullLockKey, lockValue, 'PX', timeoutMs, 'NX');
+    // Set Redis lock TTL to 2x operation timeout to prevent premature expiry
+    const lockTtlMs = Math.max(timeoutMs * 2, 60000); // Minimum 1 minute TTL
+    const acquired = await redis.set(fullLockKey, lockValue, 'PX', lockTtlMs, 'NX');
 
     if (!acquired) {
         logger.debug(`Lock already held for ${lockKey}`);
@@ -39,7 +41,12 @@ export async function withLock<T>(
 
         return result as T;
     } catch (error: any) {
-        logger.error(`Error in locked operation: ${error}`);
+        const duration = Date.now() - startTime;
+        if (error.message?.includes('timed out')) {
+            logger.warn(`Operation timed out after ${duration}ms for ${lockKey}. Consider increasing timeout or optimizing operation.`);
+        } else {
+            logger.error(`Error in locked operation: ${error}`);
+        }
         throw error;
     } finally {
         const script = `

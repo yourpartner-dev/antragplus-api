@@ -3,6 +3,7 @@ import { useLogger } from '../helpers/logger/index.js';
 import { getSchema } from '../helpers/utils/get-schema.js';
 import getDatabase from '../database/index.js';
 import { QueueManager } from '../services/queues/queue-manager.js';
+import { GrantMatchService } from '../services/ai/matching/grant-match-service.js';
 
 const logger = useLogger();
 
@@ -10,24 +11,24 @@ const logger = useLogger();
  * Initialize the AI processor with scheduled jobs for Redis-based queues
  */
 export function initializeEmbeddingProcessor() {
-  // Process Redis embedding queue (every minute)
+  // Process Redis embedding queue (every 3 minutes to reduce load)
   const processEmbeddingQueueJob = scheduleSynchronizedJob(
     'process-embedding-queue',
-    '* * * * *',
+    '*/3 * * * *',
     processEmbeddingQueue
   );
 
-  // Process Redis grant extraction queue (every minute)
+  // Process Redis grant extraction queue (every 5 minutes to reduce load)
   const processGrantExtractionQueueJob = scheduleSynchronizedJob(
     'process-grant-extraction-queue',
-    '* * * * *',
+    '*/5 * * * *',
     processGrantExtractionQueue
   );
 
-  // Process Redis document parsing queue (every 30 seconds)
+  // Process Redis document parsing queue (every 2 minutes to reduce load)
   const processDocumentParsingQueueJob = scheduleSynchronizedJob(
     'process-document-parsing-queue',
-    '*/30 * * * * *',
+    '*/2 * * * *',
     processDocumentParsingQueue
   );
 
@@ -52,7 +53,42 @@ export function initializeEmbeddingProcessor() {
     generateMissingEmbeddings
   );
 
-  logger.info('AI processor initialized with Redis-based queue schedulers (embedding, grant extraction, document parsing)');
+  // Process grant matching for new grants (every 30 minutes)
+  const processNewGrantMatchesJob = scheduleSynchronizedJob(
+    'process-new-grant-matches',
+    '*/30 * * * *',
+    processNewGrantMatches
+  );
+
+  // Process recently updated grants (every 2 hours)
+  const processUpdatedGrantMatchesJob = scheduleSynchronizedJob(
+    'process-updated-grant-matches',
+    '0 */2 * * *',
+    processUpdatedGrantMatches
+  );
+
+  // Process new NGOs (every 45 minutes, offset from grant processing)
+  const processNewNGOMatchesJob = scheduleSynchronizedJob(
+    'process-new-ngo-matches',
+    '15,45 * * * *',
+    processNewNGOMatches
+  );
+
+  // Refresh expiring grant matches (daily at 2 AM)
+  const refreshExpiringMatchesJob = scheduleSynchronizedJob(
+    'refresh-expiring-matches',
+    '0 2 * * *',
+    refreshExpiringMatches
+  );
+
+  // Clean up expired grant matches (daily at 4 AM)
+  const cleanupExpiredMatchesJob = scheduleSynchronizedJob(
+    'cleanup-expired-matches',
+    '0 4 * * *',
+    cleanupExpiredMatches
+  );
+
+  logger.info('AI processor initialized with Redis-based queue schedulers (embedding, grant extraction, document parsing, grant matching)');
 
   return {
     processEmbeddingQueueJob,
@@ -61,6 +97,11 @@ export function initializeEmbeddingProcessor() {
     refreshStaleEmbeddingsJob,
     cleanupOrphanedJob,
     generateMissingJob,
+    processNewGrantMatchesJob,
+    processUpdatedGrantMatchesJob,
+    processNewNGOMatchesJob,
+    refreshExpiringMatchesJob,
+    cleanupExpiredMatchesJob,
   };
 }
 
@@ -68,13 +109,30 @@ export function initializeEmbeddingProcessor() {
  * Process pending jobs from the Redis embedding queue
  */
 async function processEmbeddingQueue() {
+  // Check memory usage before processing
+  const memUsage = process.memoryUsage();
+  const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+  const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+
+  if (heapUsedMB > 6000) { // Alert if using more than 6GB
+    logger.warn(`High memory usage detected: ${heapUsedMB}MB/${heapTotalMB}MB. Skipping embedding queue processing.`);
+    return;
+  }
+
   try {
     const schema = await getSchema();
     const queueManager = new QueueManager(schema, null);
-    
+
     // Call the Redis-based queue's processQueue method
     await queueManager.getEmbeddingQueue().processQueue();
-    
+
+    // Log memory usage after processing
+    const memUsageAfter = process.memoryUsage();
+    const heapUsedAfterMB = Math.round(memUsageAfter.heapUsed / 1024 / 1024);
+    if (heapUsedAfterMB > heapUsedMB + 500) { // Alert if memory increased by 500MB
+      logger.warn(`Memory usage increased significantly: ${heapUsedMB}MB -> ${heapUsedAfterMB}MB`);
+    }
+
   } catch (error) {
     logger.error(error, 'Error processing embedding queue');
   }
@@ -321,4 +379,207 @@ export async function regenerateEmbeddings(
   );
 
   logger.info(`Queued ${sourceIds.length} items for embedding regeneration in Redis`);
+}
+
+/**
+ * Process grant matching for new grants that don't have matches yet
+ */
+async function processNewGrantMatches() {
+  logger.info('Processing grant matches for new grants...');
+
+  try {
+    const knex = getDatabase();
+    const grantMatchService = new GrantMatchService();
+
+    // Find grants that don't have matches yet and are still active
+    const newGrants = await knex('grants')
+      .select('grants.id')
+      .leftJoin('grant_matches', 'grants.id', 'grant_matches.grant_id')
+      .where('grants.status', 'active')
+      .where(function() {
+        this.where('grants.deadline', '>', knex.fn.now())
+          .orWhereNull('grants.deadline');
+      })
+      .whereNull('grant_matches.grant_id')
+      .orderBy('grants.created_at', 'desc')
+      .limit(5); // Process maximum 5 new grants per run
+
+    logger.info(`Found ${newGrants.length} grants without matches`);
+
+    for (const grant of newGrants) {
+      try {
+        const result = await grantMatchService.analyzeGrantMatches(grant.id);
+        logger.info(`Processed matches for grant ${grant.id}: ${result.matches_processed} matches analyzed`);
+
+        // Small delay between grants to avoid overwhelming the system
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      } catch (error) {
+        logger.error(error, `Error processing matches for grant ${grant.id}`);
+      }
+    }
+
+    logger.info('New grant matches processing completed');
+  } catch (error) {
+    logger.error(error, 'Error processing new grant matches');
+  }
+}
+
+/**
+ * Process grant matching for recently updated grants that have existing matches
+ */
+async function processUpdatedGrantMatches() {
+  logger.info('Processing grant matches for recently updated grants...');
+
+  try {
+    const knex = getDatabase();
+    const grantMatchService = new GrantMatchService();
+
+    // Find grants updated in last 24 hours that have existing matches
+    const updatedGrants = await knex('grants')
+      .select('grants.id')
+      .join('grant_matches', 'grants.id', 'grant_matches.grant_id')
+      .where('grants.status', 'active')
+      .where('grants.updated_at', '>', knex.raw('NOW() - INTERVAL \'24 hours\''))
+      .where('grant_matches.match_status', 'active')
+      .where(function() {
+        this.where('grants.deadline', '>', knex.fn.now())
+          .orWhereNull('grants.deadline');
+      })
+      .groupBy('grants.id')
+      .orderBy('grants.updated_at', 'desc')
+      .limit(10); // Process maximum 10 updated grants per run
+
+    logger.info(`Found ${updatedGrants.length} recently updated grants with existing matches`);
+
+    for (const grant of updatedGrants) {
+      try {
+        const result = await grantMatchService.analyzeGrantMatches(grant.id);
+        logger.info(`Re-processed matches for updated grant ${grant.id}: ${result.matches_processed} matches refreshed`);
+
+        // Small delay between grants to avoid overwhelming the system
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      } catch (error) {
+        logger.error(error, `Error re-processing matches for updated grant ${grant.id}`);
+      }
+    }
+
+    logger.info('Updated grant matches processing completed');
+  } catch (error) {
+    logger.error(error, 'Error processing updated grant matches');
+  }
+}
+
+/**
+ * Process grant matching for new NGOs that don't have matches yet
+ */
+async function processNewNGOMatches() {
+  logger.info('Processing grant matches for new NGOs...');
+
+  try {
+    const knex = getDatabase();
+    const grantMatchService = new GrantMatchService();
+
+    // Find NGOs that don't have matches yet
+    const newNGOs = await knex('ngos')
+      .select('ngos.id')
+      .leftJoin('grant_matches', 'ngos.id', 'grant_matches.ngo_id')
+      .whereNull('grant_matches.ngo_id')
+      .orderBy('ngos.created_at', 'desc')
+      .limit(3); // Process maximum 3 new NGOs per run (they match against many grants)
+
+    logger.info(`Found ${newNGOs.length} NGOs without matches`);
+
+    for (const ngo of newNGOs) {
+      try {
+        const result = await grantMatchService.analyzeNGOMatches(ngo.id);
+        logger.info(`Processed matches for NGO ${ngo.id}: ${result.matches_processed} grants analyzed`);
+
+        // Longer delay between NGOs since each NGO analyzes against many grants
+        await new Promise(resolve => setTimeout(resolve, 10000));
+      } catch (error) {
+        logger.error(error, `Error processing matches for NGO ${ngo.id}`);
+      }
+    }
+
+    logger.info('New NGO matches processing completed');
+  } catch (error) {
+    logger.error(error, 'Error processing new NGO matches');
+  }
+}
+
+/**
+ * Refresh grant matches that are expiring soon
+ */
+async function refreshExpiringMatches() {
+  logger.info('Refreshing expiring grant matches...');
+
+  try {
+    const knex = getDatabase();
+    const grantMatchService = new GrantMatchService();
+
+    // Find matches expiring in the next 7 days
+    const expiringMatches = await knex('grant_matches')
+      .select('grant_matches.ngo_id', 'grant_matches.grant_id')
+      .join('grants', 'grant_matches.grant_id', 'grants.id')
+      .where('grant_matches.match_status', 'active')
+      .where('grant_matches.expires_at', '>', knex.fn.now())
+      .where('grant_matches.expires_at', '<', knex.raw('NOW() + INTERVAL \'7 days\''))
+      .where('grants.status', 'active')
+      .orderBy('grant_matches.expires_at', 'asc')
+      .limit(20); // Process maximum 20 expiring matches per run
+
+    logger.info(`Found ${expiringMatches.length} expiring matches to refresh`);
+
+    for (const match of expiringMatches) {
+      try {
+        await grantMatchService.analyzeMatch(match.ngo_id, match.grant_id);
+        logger.info(`Refreshed match: NGO ${match.ngo_id} <-> Grant ${match.grant_id}`);
+
+        // Small delay between matches
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (error) {
+        logger.error(error, `Error refreshing match ${match.ngo_id}/${match.grant_id}`);
+      }
+    }
+
+    logger.info('Expiring matches refresh completed');
+  } catch (error) {
+    logger.error(error, 'Error refreshing expiring matches');
+  }
+}
+
+/**
+ * Clean up expired grant matches
+ */
+async function cleanupExpiredMatches() {
+  logger.info('Cleaning up expired grant matches...');
+
+  try {
+    const knex = getDatabase();
+
+    // Update expired matches to 'expired' status instead of deleting
+    const expiredCount = await knex('grant_matches')
+      .where('match_status', 'active')
+      .where('expires_at', '<', knex.fn.now())
+      .update({
+        match_status: 'expired',
+        updated_at: new Date()
+      });
+
+    logger.info(`Marked ${expiredCount} grant matches as expired`);
+
+    // Optionally delete very old expired matches (older than 6 months)
+    const deletedCount = await knex('grant_matches')
+      .where('match_status', 'expired')
+      .where('expires_at', '<', knex.raw('NOW() - INTERVAL \'6 months\''))
+      .delete();
+
+    if (deletedCount > 0) {
+      logger.info(`Deleted ${deletedCount} old expired grant matches`);
+    }
+
+    logger.info('Expired matches cleanup completed');
+  } catch (error) {
+    logger.error(error, 'Error cleaning up expired matches');
+  }
 }

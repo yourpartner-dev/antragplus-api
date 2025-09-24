@@ -5,6 +5,8 @@ import getDatabase from '../../../database/index.js';
 import type { Accountability, SchemaOverview } from '../../../types/index.js';
 import { DocumentService } from '../documents/application-content-service.js';
 import { GrantExtractionService } from '../grants/grant-extraction-service.js';
+import { getWebSearchTools } from './web-search-tools.js';
+import { getDocumentTools } from './document-tools.js';
 
 /**
  * Define available tools for the chat AI
@@ -16,9 +18,21 @@ export function getChatTools(options: {
 }) {
   const { accountability, schema, userId } = options;
 
+  // Get web search tools
+  const webSearchTools = getWebSearchTools();
+
+  // Get enhanced document tools
+  const documentTools = getDocumentTools({ userId });
+
   return {
-    // Create a new document
-    createDocument: tool({
+    // Web search tools - for current information
+    ...webSearchTools,
+
+    // Enhanced document tools - for document creation and management
+    ...documentTools,
+
+    // Legacy createDocument (keeping for backwards compatibility)
+    createLegacyDocument: tool({
       description: 'Create a new document for the user',
       inputSchema: z.object({
         title: z.string().describe('The title of the document'),
@@ -224,8 +238,8 @@ export function getChatTools(options: {
       },
     }),
 
-    // Update document content
-    updateDocument: tool({
+    // Legacy updateDocument (keeping for backwards compatibility)
+    updateLegacyDocument: tool({
       description: 'Update the content of an existing document',
       inputSchema: z.object({
         document_id: z.string().describe('The document ID to update'),

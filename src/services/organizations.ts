@@ -4,8 +4,10 @@ import type { Item, PrimaryKey } from '../types/index.js';
 import type { Organization } from '../types/organization.js';
 import { useEnv } from '../helpers/env/index.js';
 import { toArray } from '../helpers/utils/to-array.js';
+import { useLogger } from '../helpers/logger/index.js';
 
 const env = useEnv();
+const logger = useLogger();
 
 export class OrganizationsService extends ItemsService<Organization, string> {
 	constructor(options: any) {
@@ -26,7 +28,7 @@ export class OrganizationsService extends ItemsService<Organization, string> {
 				await filesService.deleteOne(existingLogoId);
 			} catch (error) {
 				// Log error but continue with new logo upload
-				console.error('Failed to delete existing logo:', error);
+				logger.error(error, 'Failed to delete existing logo');
 			}
 		}
 

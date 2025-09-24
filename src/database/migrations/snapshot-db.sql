@@ -232,8 +232,8 @@ CREATE TABLE grants (
 	"name" varchar(255) NULL,
 	description text NULL,
 	provider varchar(255) NULL,
-	category varchar(100) NULL,
-	"type" varchar(100) NULL,
+	category text NULL, -- Education, Healthcare, Environment, etc. (Updated to TEXT for AI flexibility)
+	"type" text NULL, -- Project-based, Operating, Capacity Building, etc. (Updated to TEXT for AI flexibility)
 	amount_min numeric(15, 2) NULL,
 	amount_max numeric(15, 2) NULL,
 	currency varchar(3) DEFAULT 'EUR'::character varying NULL,
@@ -250,6 +250,15 @@ CREATE TABLE grants (
 	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	created_by uuid NULL,
 	updated_by uuid NULL,
+	"location" text NULL, -- Geographic location where NGO should be (e.g. specific region in Germany or EU)
+	reference_number text NULL, -- Official reference number for documentation and reference (Updated to TEXT for AI flexibility)
+	contact_person text NULL, -- Person responsible for this grant (Updated to TEXT for AI flexibility)
+	contact_number text NULL, -- Phone number of responsible person (Updated to TEXT for AI flexibility)
+	contact_email text NULL, -- Email of reference person (Updated to TEXT for AI flexibility)
+	company_size text NULL, -- Size of companies that can apply (Updated to TEXT for AI flexibility)
+	funding_frequency text NULL, -- How often they fund NGOs (Updated to TEXT for AI flexibility)
+	decision_timeline text NULL, -- When they will likely make a decision
+	year_of_program_establishment int4 NULL, -- When the grant program was established
 	CONSTRAINT grants_pkey PRIMARY KEY (id),
 	CONSTRAINT grants_translation_group_id_fkey FOREIGN KEY (translation_group_id) REFERENCES translation_groups(id)
 );
@@ -259,9 +268,23 @@ CREATE INDEX idx_grants_deadline ON public.grants USING btree (deadline);
 CREATE INDEX idx_grants_language ON public.grants USING btree (language);
 CREATE INDEX idx_grants_metadata ON public.grants USING gin (metadata);
 CREATE INDEX idx_grants_provider ON public.grants USING btree (provider);
-CREATE INDEX idx_grants_search ON public.grants USING gin (to_tsvector('english'::regconfig, (((((((((((((name)::text || ' '::text) || COALESCE(description, ''::text)) || ' '::text) || (COALESCE(provider, ''::character varying))::text) || ' '::text) || (COALESCE(category, ''::character varying))::text) || ' '::text) || (COALESCE(type, ''::character varying))::text) || ' '::text) || COALESCE(eligibility_criteria, ''::text)) || ' '::text) || COALESCE(application_process, ''::text))));
+CREATE INDEX idx_grants_search ON public.grants USING gin (to_tsvector('english'::regconfig, (((((((((((((name)::text || ' '::text) || COALESCE(description, ''::text)) || ' '::text) || (COALESCE(provider, ''::character varying))::text) || ' '::text) || COALESCE(category, (''::character varying)::text)) || ' '::text) || COALESCE(type, (''::character varying)::text)) || ' '::text) || COALESCE(eligibility_criteria, ''::text)) || ' '::text) || COALESCE(application_process, ''::text))));
 CREATE INDEX idx_grants_status ON public.grants USING btree (status);
 CREATE INDEX idx_grants_translation_group ON public.grants USING btree (translation_group_id);
+
+-- Column comments
+
+COMMENT ON COLUMN public.grants.category IS 'Education, Healthcare, Environment, etc. (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN public.grants."type" IS 'Project-based, Operating, Capacity Building, etc. (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN public.grants."location" IS 'Geographic location where NGO should be (e.g. specific region in Germany or EU)';
+COMMENT ON COLUMN public.grants.reference_number IS 'Official reference number for documentation and reference (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN public.grants.contact_person IS 'Person responsible for this grant (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN public.grants.contact_number IS 'Phone number of responsible person (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN public.grants.contact_email IS 'Email of reference person (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN public.grants.company_size IS 'Size of companies that can apply (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN public.grants.funding_frequency IS 'How often they fund NGOs (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN public.grants.decision_timeline IS 'When they will likely make a decision';
+COMMENT ON COLUMN public.grants.year_of_program_establishment IS 'When the grant program was established';
 
 -- Table Triggers
 
@@ -398,7 +421,6 @@ CREATE TABLE yp_users (
 	"token" varchar(255) NULL,
 	last_access timestamptz NULL,
 	last_page varchar(255) NULL,
-	organization uuid NULL,
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	email_notifications bool DEFAULT true NOT NULL,
 	provider varchar(255) DEFAULT 'default'::character varying NULL,
@@ -408,7 +430,6 @@ CREATE TABLE yp_users (
 	organization_id uuid NULL,
 	CONSTRAINT yp_users_email_unique UNIQUE (email),
 	CONSTRAINT yp_users_pkey PRIMARY KEY (id),
-	CONSTRAINT yp_users_organization_foreign FOREIGN KEY (organization) REFERENCES yp_organizations(id),
 	CONSTRAINT yp_users_organization_id_foreign FOREIGN KEY (organization_id) REFERENCES yp_organizations(id),
 	CONSTRAINT yp_users_role_foreign FOREIGN KEY ("role") REFERENCES yp_roles(id)
 );
@@ -1100,7 +1121,7 @@ CREATE TABLE grant_extraction_queue (
 	CONSTRAINT grant_extraction_queue_pkey PRIMARY KEY (id),
 	CONSTRAINT grant_extraction_queue_created_by_fkey FOREIGN KEY (created_by) REFERENCES yp_users(id),
 	CONSTRAINT grant_extraction_queue_file_id_fkey FOREIGN KEY (file_id) REFERENCES yp_files(id) ON DELETE CASCADE,
-	CONSTRAINT grant_extraction_queue_grant_id_fkey FOREIGN KEY (grant_id) REFERENCES grants(id) ON DELETE SET NULL
+	CONSTRAINT grant_extraction_queue_grant_id_fkey FOREIGN KEY (grant_id) REFERENCES grants(id) ON DELETE CASCADE
 );
 CREATE INDEX idx_grant_extraction_queue_batch ON public.grant_extraction_queue USING btree (batch_id);
 CREATE INDEX idx_grant_extraction_queue_created ON public.grant_extraction_queue USING btree (created_at);
@@ -1141,3 +1162,27 @@ update
 
 ALTER TABLE message_votes OWNER TO postgres;
 GRANT ALL ON TABLE message_votes TO postgres;
+
+
+-- public.ngo_documents definition
+
+-- Drop table
+
+-- DROP TABLE ngo_documents;
+
+CREATE TABLE ngo_documents (
+	id uuid DEFAULT gen_random_uuid() NOT NULL,
+	ngo_id uuid NOT NULL,
+	file_id uuid NOT NULL,
+	metadata jsonb DEFAULT '{}'::jsonb NULL,
+	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
+	created_by uuid NULL,
+	CONSTRAINT ngo_documents_pkey PRIMARY KEY (id),
+	CONSTRAINT ngo_documents_file_id_fkey FOREIGN KEY (file_id) REFERENCES yp_files(id) ON DELETE CASCADE,
+	CONSTRAINT ngo_documents_ngo_id_fkey FOREIGN KEY (ngo_id) REFERENCES ngos(id) ON DELETE CASCADE
+);
+
+-- Permissions
+
+ALTER TABLE ngo_documents OWNER TO postgres;
+GRANT ALL ON TABLE ngo_documents TO postgres;

@@ -58,14 +58,27 @@ export class EmbeddingQueue extends BaseQueue {
   }
 
   /**
-   * Process the queue continuously
+   * Process the queue continuously with rate limiting
    */
   public async processQueue(): Promise<void> {
-    while (true) {
+    let processedCount = 0;
+    const maxBatchSize = 10; // Limit processing to prevent resource exhaustion
+
+    while (processedCount < maxBatchSize) {
       const queueSize = await this.getQueueSize();
       if (queueSize === 0) break;
-      
+
       await this.process();
+      processedCount++;
+
+      // Add small delay between items to prevent overwhelming the system
+      if (processedCount < maxBatchSize) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    if (processedCount >= maxBatchSize) {
+      this.logger.info(`Processed ${processedCount} items, stopping to prevent resource exhaustion`);
     }
   }
 
@@ -105,7 +118,7 @@ export class EmbeddingQueue extends BaseQueue {
               }]);
             }, error);
           }
-        });
+        }, 120000); // 2 minutes timeout for embedding operations (handles slow OpenAI API)
       } catch (error) {
         this.logger.error(error, `Failed to process embedding job`);
         await this.handleFailedItem(job, error as Error);
@@ -117,12 +130,15 @@ export class EmbeddingQueue extends BaseQueue {
    * Process a single embedding job
    */
   private async processEmbeddingJob(payload: EmbeddingJobPayload): Promise<void> {
+    const startTime = Date.now();
     this.logger.info(`Processing embedding job for ${payload.source_table}:${payload.source_id}`);
 
     const knex = getDatabase();
 
     if (payload.operation === 'delete') {
       await this.deleteEmbeddings(knex, payload.source_table, payload.source_id);
+      const duration = Date.now() - startTime;
+      this.logger.info(`Deleted embeddings for ${payload.source_table}:${payload.source_id} in ${duration}ms`);
       return;
     }
 
@@ -153,9 +169,15 @@ export class EmbeddingQueue extends BaseQueue {
     // Store embeddings
     await this.storeEmbeddings(knex, chunks);
 
+    const duration = Date.now() - startTime;
     this.logger.info(
-      `Successfully processed ${chunks.length} embeddings for ${payload.source_table}:${payload.source_id}`
+      `Successfully processed ${chunks.length} embeddings for ${payload.source_table}:${payload.source_id} in ${duration}ms`
     );
+
+    // Warn if operation took longer than 20 seconds
+    if (duration > 20000) {
+      this.logger.warn(`Slow embedding job: ${duration}ms for ${payload.source_table}:${payload.source_id} (${chunks.length} chunks)`);
+    }
   }
 
   /**
@@ -292,15 +314,21 @@ export class EmbeddingQueue extends BaseQueue {
       return chunks;
     }
 
-    // Generate embeddings in batches
-    const batchSize = 10; // Process 10 chunks at a time
+    // Generate embeddings in smaller batches to prevent timeouts
+    const batchSize = 10;
     for (let i = 0; i < allChunks.length; i += batchSize) {
       const batch = allChunks.slice(i, i + batchSize);
       const texts = batch.map(chunk => chunk.text);
 
       try {
         // Try batch processing first
+        const batchStartTime = Date.now();
         const embeddings = await embeddingProvider.generateBatchEmbeddings(texts);
+        const batchDuration = Date.now() - batchStartTime;
+
+        if (batchDuration > 10000) { // Warn if batch took >10s
+          this.logger.warn(`Slow embedding batch: ${batchDuration}ms for ${texts.length} chunks`);
+        }
 
         for (let j = 0; j < batch.length; j++) {
           const chunk = batch[j];
@@ -323,7 +351,7 @@ export class EmbeddingQueue extends BaseQueue {
         }
       } catch (error) {
         // Fallback to individual processing if batch fails
-        this.logger.warn('Batch embedding failed, falling back to individual processing:', error);
+        this.logger.warn(error, 'Batch embedding failed, falling back to individual processing');
         
         for (const chunk of batch) {
           const embedding = await this.generateEmbedding(chunk.text);

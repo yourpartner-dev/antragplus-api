@@ -1,10 +1,13 @@
 import { z } from 'zod';
 import { tool } from 'ai';
+import { generateText } from 'ai';
+import { getOpenAIModel } from '../providers.js';
 import { TavilyClient } from 'tavily';
 import getDatabase from '../../../database/index.js';
 import { nanoid } from 'nanoid';
 import { useLogger } from '../../../helpers/logger/index.js';
 import { useEnv } from '../../../helpers/env/index.js';
+import { fetchNGOInformation, type NGOExtractionResult } from './ngo-fetch-tool.js';
 
 const logger = useLogger();
 const env = useEnv();
@@ -19,6 +22,7 @@ const tavilyClient = new TavilyClient({
   apiKey: TAVILY_API_KEY || '',
 });
 
+
 /**
  * Standalone function for searching NGO information
  * Can be called directly without AI SDK tool context
@@ -27,8 +31,61 @@ export async function searchNGOInformation(params: {
   website_url?: string;
   ngo_name?: string;
   search_query?: string;
+  force_proceed?: boolean;
+}): Promise<NGOExtractionResult | any> {
+  const { website_url } = params;
+
+  try {
+    // FIRST PRIORITY: Try direct website fetch if URL is provided
+    if (website_url) {
+      logger.info(`Attempting direct fetch for website: ${website_url}`);
+      const fetchResult = await fetchNGOInformation(website_url);
+
+      if (fetchResult.success && fetchResult.confidence && fetchResult.confidence > 0.6) {
+        logger.info(`Direct fetch successful with ${Math.round(fetchResult.confidence * 100)}% confidence`);
+        return {
+          success: true,
+          extractedInfo: fetchResult.extractedInfo,
+          searchResults: {
+            answer: `Information extracted directly from ${website_url}`,
+            results: [{
+              title: 'Organization Website',
+              url: website_url,
+              content: 'Direct website extraction'
+            }]
+          },
+          message: `${fetchResult.message} (direct fetch method)`,
+          method: 'direct_fetch',
+          confidence: fetchResult.confidence
+        };
+      } else {
+        logger.info(`Direct fetch had low confidence (${fetchResult.confidence}), falling back to search method`);
+      }
+    }
+
+    // FALLBACK: Use original search-based method
+    logger.info('Using search-based extraction method');
+    return await searchNGOInformationWithSearch(params);
+  } catch (error) {
+    logger.error(error, 'Error in NGO information search');
+    return {
+      success: false,
+      message: 'Failed to extract NGO information',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Original search-based NGO information extraction (renamed for clarity)
+ */
+async function searchNGOInformationWithSearch(params: {
+  website_url?: string;
+  ngo_name?: string;
+  search_query?: string;
+  force_proceed?: boolean;
 }) {
-  const { website_url, ngo_name } = params;
+  const { website_url, ngo_name, force_proceed } = params;
 
   try {
     // Check if Tavily API key is configured
@@ -44,7 +101,9 @@ export async function searchNGOInformation(params: {
     let domain = '';
     if (website_url) {
       try {
-        domain = new URL(website_url).hostname.replace('www.', '');
+        // Add protocol if missing
+        const urlToProcess = website_url.startsWith('http') ? website_url : `https://${website_url}`;
+        domain = new URL(urlToProcess).hostname.replace('www.', '');
       } catch (e) {
         logger.warn('Invalid URL provided:', website_url);
       }
@@ -54,79 +113,143 @@ export async function searchNGOInformation(params: {
     const searchQueries = [];
     const nameQuery = ngo_name || domain || '';
 
-    // Query for each specific field we want to extract
-    // Add instruction to return just the value without explanatory text
+    // Early return if we have no search terms
+    if (!nameQuery) {
+      return {
+        success: false,
+        message: 'Please provide either a website URL or NGO name to search for.',
+        error: 'No search terms provided',
+      };
+    }
+
+    // LAYER 1: Silent Organization Type Detection (no tool state triggered)
+    logger.info(`Silently detecting organization type for ${nameQuery}`);
+
+    const typeDetectionQuery = domain
+      ? `site:${domain} impressum about school gymnasium university company NGO nonprofit business government institution`
+      : `"${nameQuery}" school gymnasium university company NGO nonprofit business government institution type`;
+
+    let typeDetectionResult;
+    try {
+      typeDetectionResult = await tavilyClient.search({
+        query: typeDetectionQuery,
+        search_depth: 'advanced',
+        max_results: 5,
+        include_answer: true,
+        include_raw_content: true,
+      });
+    } catch (error: any) {
+      if (error.response?.status === 432) {
+        return {
+          success: false,
+          message: 'Tavily API authentication failed. Please check your TAVILY_API_KEY configuration.',
+          error: 'Tavily API authentication error (432)',
+        };
+      }
+      throw error; // Re-throw other errors for normal handling
+    }
+
+    const organizationType = await detectOrganizationType(typeDetectionResult.answer || '', nameQuery);
+    logger.info(`Detected organization type: ${organizationType}`);
+
+    // Pre-search validation: Return confirmation message for non-NGOs (unless forced)
+    if (!force_proceed && (organizationType === 'school' || organizationType === 'company' || organizationType === 'government')) {
+      return {
+        success: true,
+        requiresConfirmation: true,
+        organizationType,
+        message: `I noticed this appears to be a ${organizationType}. Are you sure you want me to search for NGO information about this organization?`,
+        instruction: 'Ask the user to confirm if they want to proceed with NGO information extraction for this non-NGO organization. If they confirm, call this tool again with force_proceed: true.',
+      };
+    }
+
+    // LAYER 2: Extract all fields for NGOs, nonprofits, or unknown organizations
     const fieldQueries = [
       {
-        query: `What is the mission and about information for ${nameQuery}? Return just the mission/about text.`,
+        query: domain
+          ? `site:${domain} ${nameQuery} mission about purpose what we do`
+          : `"${nameQuery}" mission about purpose organization Germany`,
         field: 'about',
-        depth: 'basic'
+        depth: 'advanced'
       },
       {
-        query: `What is the location address city country of ${nameQuery}? Return just the address.`,
+        query: domain
+          ? `site:${domain} ${nameQuery} address location contact impressum`
+          : `"${nameQuery}" address location contact Germany`,
         field: 'location',
         depth: 'basic'
       },
       {
-        query: `What is the contact email address of ${nameQuery}? Return just the email address.`,
+        query: domain
+          ? `site:${domain} ${nameQuery} email contact impressum`
+          : `"${nameQuery}" email contact Germany`,
         field: 'contact_email',
         depth: 'basic'
       },
       {
-        query: `What is the contact phone number of ${nameQuery}? Return just the phone number.`,
+        query: domain
+          ? `site:${domain} ${nameQuery} phone telephone contact impressum`
+          : `"${nameQuery}" phone telephone contact Germany`,
         field: 'contact_phone',
         depth: 'basic'
       },
       {
-        query: `What is the legal entity type (e.V., gGmbH, foundation) of ${nameQuery}? Return just the entity type.`,
+        query: domain
+          ? `site:${domain} ${nameQuery} legal entity type impressum`
+          : `"${nameQuery}" legal entity type e.V. gGmbH Germany`,
         field: 'legal_entity',
         depth: 'basic'
       },
       {
-        query: `What is the field of work sector industry of ${nameQuery}? Return just the field/sector.`,
+        query: domain
+          ? `site:${domain} ${nameQuery} field work sector industry what we do`
+          : `"${nameQuery}" field work sector what they do Germany`,
         field: 'field_of_work',
         depth: 'basic'
       },
       {
-        query: `What is the company team size number of employees of ${nameQuery}? Return just the number or range.`,
+        query: domain
+          ? `site:${domain} ${nameQuery} team size employees staff how many`
+          : `"${nameQuery}" team size employees staff Germany`,
         field: 'company_size',
         depth: 'basic'
       },
       {
-        query: `What type of funding grants does ${nameQuery} receive or apply for? Return just the funding types.`,
+        query: domain
+          ? `site:${domain} ${nameQuery} funding grants support donations`
+          : `"${nameQuery}" funding grants support donations Germany`,
         field: 'funding_type',
         depth: 'basic'
       },
       {
-        query: `What is the typical grant application funding amount size for ${nameQuery}? Return just the amount.`,
+        query: domain
+          ? `site:${domain} ${nameQuery} funding amount grant size budget`
+          : `"${nameQuery}" funding amount grant size budget Germany`,
         field: 'application_size',
         depth: 'basic'
       },
       {
-        query: `What is the tax ID VAT number of ${nameQuery}? Return just the tax ID or VAT number.`,
+        query: domain
+          ? `site:${domain} ${nameQuery} tax ID VAT number impressum`
+          : `"${nameQuery}" tax ID VAT number Germany`,
         field: 'tax_id',
         depth: 'basic'
       },
       {
-        query: `What is the registration number of ${nameQuery}? Return just the registration number.`,
+        query: domain
+          ? `site:${domain} ${nameQuery} registration number HRB VR impressum`
+          : `"${nameQuery}" registration number HRB VR Germany`,
         field: 'registration_number',
         depth: 'basic'
       },
       {
-        query: `Who is the contact person name at ${nameQuery}? Return just the person's name.`,
+        query: domain
+          ? `site:${domain} ${nameQuery} contact person director manager team`
+          : `"${nameQuery}" contact person director manager Germany`,
         field: 'contact_name',
         depth: 'basic'
       }
     ];
-
-    // Add website-specific query if we have a domain
-    if (domain) {
-      fieldQueries.unshift({
-        query: `site:${domain} about mission`,
-        field: 'website_info',
-        depth: 'advanced'
-      });
-    }
 
     searchQueries.push(...fieldQueries);
 
@@ -144,7 +267,7 @@ export async function searchNGOInformation(params: {
         });
         return { field, result };
       } catch (error) {
-        logger.warn(`Search failed for ${field}:`, error);
+        logger.error(error, `Search failed for ${field}`);
         return { field, result: null };
       }
     });
@@ -164,77 +287,15 @@ export async function searchNGOInformation(params: {
           websiteInfo = result.answer;
           // Also use this for about if we don't get a better answer
           if (!extractedInfo.about) {
-            extractedInfo.about = result.answer.substring(0, 1000);
+            extractedInfo.about = await extractFieldValueWithAI(result.answer, 'about');
           }
         } else {
-          // Directly use the answer for the field but clean it up
-          let cleanAnswer = result.answer.trim().replace(/\s+/g, ' ');
+          // Use AI-powered extraction for clean, accurate field values
+          let cleanAnswer = await extractFieldValueWithAI(result.answer, field);
 
-          // Post-process to extract just the key value from verbose responses
-          // Remove common prefixes like "The contact email for X is..." 
-          if (field === 'contact_email') {
-            // Extract just the email from verbose text
-            const emailMatch = cleanAnswer.match(/[\w.-]+@[\w.-]+\.\w+/);
-            if (emailMatch) {
-              cleanAnswer = emailMatch[0];
-            }
-          } else if (field === 'contact_phone') {
-            // Extract just the phone number
-            const phoneMatch = cleanAnswer.match(/[\+\d\s\(\)-]+/);
-            if (phoneMatch && phoneMatch[0].length >= 10) {
-              cleanAnswer = phoneMatch[0].trim();
-            }
-          } else if (field === 'location') {
-            // Remove "is located at" or similar prefixes
-            cleanAnswer = cleanAnswer.replace(/.*(?:is located at|is based in|address is|location is)\s*/i, '');
-            // Remove trailing periods and extra text
-            cleanAnswer = cleanAnswer?.split('.')[0]?.trim() || '';
-          } else if (field === 'legal_entity') {
-            // Extract just the entity type
-            const entityMatch = cleanAnswer.match(/\b(e\.V\.|gGmbH|GmbH|gUG|UG|AG|Foundation|Stiftung|non-profit|NGO)\b/i);
-            if (entityMatch) {
-              cleanAnswer = entityMatch[0];
-            }
-          } else if (field === 'company_size') {
-            // Extract just the number or range
-            const sizeMatch = cleanAnswer.match(/\d+(?:-\d+)?(?:\s*employees)?|\d+\+/);
-            if (sizeMatch) {
-              cleanAnswer = sizeMatch[0].replace('employees', '').trim();
-            }
-          } else if (field === 'tax_id') {
-            // Extract just the ID number
-            const idMatch = cleanAnswer.match(/\b[A-Z]{2}\d{9,11}\b|\b\d{9,15}\b/);
-            if (idMatch) {
-              cleanAnswer = idMatch[0];
-            }
-          } else if (field === 'registration_number') {
-            // Match common German registration patterns like "HRB 236252 B", "VR 12345", "HRA 123456"
-            const registrationPattern = cleanAnswer.match(/\b(?:HRB|HRA|VR|GnR|PR)\s*\d+\s*[A-Z]?\b/i);
-            if (registrationPattern) {
-              cleanAnswer = registrationPattern[0];
-            } else {
-              // Fallback: look for any pattern with 2-3 letters followed by numbers and optional letter
-              const fallbackPattern = cleanAnswer.match(/\b[A-Z]{2,3}\s*\d{4,10}\s*[A-Z]?\b/);
-              if (fallbackPattern) {
-                cleanAnswer = fallbackPattern[0];
-              }
-            }
-          } else if (field === 'contact_name') {
-            // Remove "The contact person is" type prefixes
-            cleanAnswer = cleanAnswer.replace(/.*(?:contact person is|contact name is|person at.*is)\s*/i, '');
-            // Take just the name, not email or other info
-            cleanAnswer = cleanAnswer?.split(/[,\.]|Her |His |Their |Email/)[0]?.trim() || '';
-          } else if (field === 'application_size') {
-            // Extract just the amount
-            const amountMatch = cleanAnswer.match(/[\$€]\s*[\d,]+(?:\.\d+)?(?:k|K|M|million)?|\d+(?:,\d+)*(?:\s*(?:USD|EUR|dollars|euros))?/);
-            if (amountMatch) {
-              cleanAnswer = amountMatch[0];
-            }
-          }
-
-          // Store the cleaned answer
-          if (cleanAnswer && cleanAnswer.length > 1) {
-            extractedInfo[field] = cleanAnswer.substring(0, 500);
+          // Store the cleaned answer (filter out "not found" responses)
+          if (cleanAnswer && cleanAnswer.length > 1 && !cleanAnswer.toLowerCase().includes('not found') && !cleanAnswer.toLowerCase().includes('not relevant')) {
+            extractedInfo[field] = cleanAnswer;
 
             // Map to additional fields as needed
             if (field === 'location') {
@@ -271,6 +332,9 @@ export async function searchNGOInformation(params: {
       extractedInfo.domain_name = domain;
     }
 
+    // Add detected organization type
+    extractedInfo.organization_type = organizationType;
+
     // Set company_name if provided or derive from domain
     if (ngo_name) {
       extractedInfo.company_name = ngo_name;
@@ -304,10 +368,6 @@ export async function searchNGOInformation(params: {
       }
     }
 
-    // Add description if we have about text
-    if (extractedInfo.about && !extractedInfo.description) {
-      extractedInfo.description = extractedInfo.about.substring(0, 255);
-    }
 
     // No more complex extraction needed - we already have everything from targeted queries
     // Clean up extracted info - remove any null/undefined values
@@ -354,18 +414,20 @@ export function getNGOTools(options: {
   return {
     // Search web for NGO information
     searchNGOWebsite: tool({
-      description: 'Search the web for information about an NGO using their website or name',
+      description: 'Analyze organization type and search for NGO information. First call analyzes if organization is an NGO. Second call (with force_proceed: true) performs actual NGO data extraction.',
       inputSchema: z.object({
         website_url: z.string().optional().describe('The NGO website URL to search'),
         ngo_name: z.string().optional().describe('The NGO name to search for'),
         search_query: z.string().optional().describe('Additional search query terms'),
+        force_proceed: z.boolean().optional().describe('Set to true to bypass organization type confirmation and proceed with search'),
       }),
-      execute: async ({ website_url, ngo_name, search_query }) => {
+      execute: async ({ website_url, ngo_name, search_query, force_proceed }) => {
         // Use the standalone function, filtering out undefined values
         return searchNGOInformation({
           ...(website_url && { website_url }),
           ...(ngo_name && { ngo_name }),
           ...(search_query && { search_query }),
+          ...(force_proceed && { force_proceed }),
         });
       },
     }),
@@ -604,4 +666,133 @@ export function getNGOTools(options: {
       },
     }),
   };
+}
+
+/**
+ * Extract specific field value using AI for clean, accurate results
+ */
+async function extractFieldValueWithAI(content: string, fieldName: string): Promise<string> {
+  if (!content || content.trim().length === 0) {
+    return '';
+  }
+
+  // Field-specific extraction prompts
+  const extractionPrompts: Record<string, string> = {
+    'about': 'Extract ONLY information about what this specific organization does. If the text does not contain information about the organization being searched for, return exactly "not found". Do not make up information.',
+    'contact_email': 'Extract ONLY the email address from this text. Return just the email address or "not found". Do not make up email addresses.',
+    'contact_phone': 'Extract ONLY the phone number from this text. Return just the phone number or "not found". Do not make up phone numbers.',
+    'location': 'Extract ONLY the address or location from this text. Return just the address or "not found". Do not make up addresses.',
+    'legal_entity': 'Extract ONLY the legal entity type (e.V., gGmbH, GmbH, etc.) from this text. Return just the entity type or "not found". Do not make up legal entity information.',
+    'company_size': 'Extract ONLY the number of employees or team size from this text. Return just the number/range or "not found". Do not make up company size information.',
+    'tax_id': 'Extract ONLY the tax ID, VAT number, or USt-ID from this text. Return just the ID number or "not found". Do not make up tax IDs.',
+    'registration_number': 'Extract ONLY the registration number (HRB, VR, HRA, etc.) from this text. Return just the registration number or "not found". Do not make up registration numbers.',
+    'contact_name': 'Extract ONLY the contact person\'s name from this text. Return just the person\'s name or "not found". Do not make up contact names.',
+    'application_size': 'Extract ONLY the funding amount or grant size from this text. Return just the amount with currency or "not found". Do not make up funding amounts.',
+    'funding_type': 'Extract ONLY the type of funding or grants mentioned in this text. Return just the funding type or "not found". Do not make up funding types.',
+    'field_of_work': 'Extract ONLY the field of work or sector from this text. Return just the field/sector or "not found". Do not make up fields of work.',
+  };
+
+  const prompt = extractionPrompts[fieldName];
+  if (!prompt) {
+    // Fallback for unknown fields - just clean up the text
+    return content.trim();
+  }
+
+  try {
+    const result = await generateText({
+      model: getOpenAIModel('gpt-4o-mini'), // Use cost-effective model from providers
+      prompt: `${prompt}\n\nText: "${content}"`,
+      maxRetries: 1,
+      temperature: 0, // Deterministic for factual extraction
+    });
+
+    const extracted = result.text.trim();
+
+    // Basic validation - if result is too long or contains explanatory text, fall back to simple cleanup
+    if (extracted.length > 200 || extracted.toLowerCase().includes('the ') || extracted.toLowerCase().includes('from this text')) {
+      // Fallback to simple regex for this field
+      return fallbackExtraction(content, fieldName);
+    }
+
+    return extracted;
+  } catch (error) {
+    logger.warn(`AI extraction failed for ${fieldName}, falling back to regex:`, error);
+    return fallbackExtraction(content, fieldName);
+  }
+}
+
+/**
+ * Fallback extraction using regex patterns (simplified version of original)
+ */
+function fallbackExtraction(content: string, fieldName: string): string {
+  const text = content.trim().replace(/\s+/g, ' ');
+
+  switch (fieldName) {
+    case 'contact_email':
+      const emailMatch = text.match(/[\w.-]+@[\w.-]+\.\w+/);
+      return emailMatch ? emailMatch[0] : '';
+
+    case 'contact_phone':
+      const phoneMatch = text.match(/[\+\d\s\(\)-]{10,}/);
+      return phoneMatch ? phoneMatch[0].trim() : '';
+
+    case 'legal_entity':
+      const entityMatch = text.match(/\b(e\.V\.|gGmbH|GmbH|gUG|UG|AG|Foundation|Stiftung)\b/i);
+      return entityMatch ? entityMatch[0] : '';
+
+    case 'registration_number':
+      const registrationMatch = text.match(/\b(?:HRB|HRA|VR|GnR|PR)\s*\d+\s*[A-Z]?\b/i);
+      return registrationMatch ? registrationMatch[0] : '';
+
+    default:
+      return text.trim();
+  }
+}
+
+/**
+ * Detect organization type using AI analysis
+ */
+async function detectOrganizationType(content: string, organizationName: string): Promise<string> {
+  if (!content || content.trim().length === 0) {
+    return 'unknown';
+  }
+
+  try {
+    const result = await generateText({
+      model: getOpenAIModel('gpt-4o-mini'),
+      prompt: `Analyze this content about "${organizationName}" and determine what type of organization it is.
+
+Content: "${content}"
+
+IMPORTANT: Look for specific organizational indicators:
+- If it mentions "school", "gymnasium", "university", "education", "students", "grades" → school
+- If it mentions "e.V.", "gGmbH", "nonprofit", "charity", "foundation", "NGO" → NGO
+- If it mentions "GmbH", "business", "products", "services", "commercial" → company
+- If it mentions "government", "ministry", "public agency", "municipal" → government
+
+Return ONLY one word:
+- NGO
+- school
+- company
+- government
+- unknown
+
+Just the single word, nothing else.`,
+      maxRetries: 1,
+      temperature: 0,
+    });
+
+    const detectedType = result.text.trim().toLowerCase();
+
+    // Validate the response
+    const validTypes = ['ngo', 'school', 'company', 'government', 'unknown'];
+    if (validTypes.includes(detectedType)) {
+      return detectedType;
+    } else {
+      return 'unknown';
+    }
+  } catch (error) {
+    logger.warn('Organization type detection failed:', error);
+    return 'unknown';
+  }
 }

@@ -220,6 +220,9 @@ CREATE TABLE IF NOT EXISTS grant_matches (
     summary TEXT NOT NULL, -- AI-generated summary of why this is a match
     analysis TEXT NOT NULL, -- Detailed AI analysis with potential HTML/icons
     matching_criteria JSONB DEFAULT '{}', -- Store which fields/criteria matched
+    matching_points TEXT[] DEFAULT '{}', -- Array of specific points explaining why this grant matches the NGO
+    missing_points TEXT[] DEFAULT '{}', -- Array of specific requirements or criteria that the NGO is missing
+    suggestions TEXT[] DEFAULT '{}', -- Array of actionable suggestions to improve eligibility
     metadata JSONB DEFAULT '{}',
     expires_at TIMESTAMP WITH TIME ZONE, -- When this match recommendation expires
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -370,6 +373,9 @@ CREATE INDEX idx_grant_matches_grant_id ON grant_matches(grant_id);
 CREATE INDEX idx_grant_matches_status ON grant_matches(match_status);
 CREATE INDEX idx_grant_matches_score ON grant_matches(match_score DESC);
 CREATE INDEX idx_grant_matches_expires ON grant_matches(expires_at);
+CREATE INDEX idx_grant_matches_matching_points ON grant_matches USING gin(matching_points);
+CREATE INDEX idx_grant_matches_missing_points ON grant_matches USING gin(missing_points);
+CREATE INDEX idx_grant_matches_suggestions ON grant_matches USING gin(suggestions);
 CREATE INDEX idx_ngo_snippets_ngo_id ON ngo_snippets(ngo_id);
 CREATE INDEX idx_ngo_snippets_type ON ngo_snippets(snippet_type);
 CREATE INDEX idx_ngo_snippets_active ON ngo_snippets(is_active);

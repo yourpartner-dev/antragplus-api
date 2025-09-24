@@ -162,7 +162,7 @@ export class DocumentParsingQueue extends BaseQueue {
 
       this.logger.info(`Successfully parsed document ${file_id} - extracted ${content.text.length} characters`);
     } catch (error) {
-      this.logger.error(`Error processing document parsing job for file ${file_id}:`, error);
+      this.logger.error(error, `Error processing document parsing job for file ${file_id}`);
       throw error;
     }
   }

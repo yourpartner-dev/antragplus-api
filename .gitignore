@@ -60,3 +60,6 @@ TODO
 /packages/extensions-sdk/temp-extension-*/
 /docs/packages/
 /uploads
+
+# Crawlee (Web Scraping)
+storage/

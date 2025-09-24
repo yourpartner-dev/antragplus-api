@@ -28,6 +28,12 @@ export function getOpenAIModel(modelName?: string): LanguageModel {
 
 // Export helper for grant extraction using Gemini
 export function getGrantExtractionModel(): LanguageModel {
-  const model = env['GEMINI_MODEL'] as string || 'gemini-1.5-pro-latest';
+  const model = env['GEMINI_MODEL'] as string || 'gemini-2.5-pro';
+  return google(model);
+}
+
+// Export helper for grant matching using Gemini (large context window for documents)
+export function getGrantMatchingModel(): LanguageModel {
+  const model = env['GEMINI_MODEL'] as string || 'gemini-2.5-flash';
   return google(model);
 }

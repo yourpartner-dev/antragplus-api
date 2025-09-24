@@ -6,7 +6,7 @@ This document provides an overview of the scheduling system used in this project
 
 Schedulers in this system are time-based jobs defined by a cron expression and an asynchronous task function that performs the desired work. A helper function, `scheduleSynchronizedJob`, is central to defining and managing these jobs, ensuring that instances of the same named job do not run concurrently if a previous instance is still active.
 
-Each distinct set of related scheduled tasks is often organized into its own processor module (e.g., `measure-processor.ts`, `queue-processor.ts`).
+Each distinct set of related scheduled tasks is often organized into its own processor module (e.g., `queue-processor.ts`).
 
 ### Creating a Scheduler Module
 

@@ -4,6 +4,7 @@ import { useLogger } from '../../../helpers/logger/index.js';
 import { ItemsService } from '../../items.js';
 import getDatabase from '../../../database/index.js';
 import { ragService } from '../../rag-service.js';
+import { enhancedRAGService } from '../enhanced-rag-service.js';
 import { getChatTools } from '../tools/chat-tools.js';
 import { QueueManager } from '../../queues/queue-manager.js';
 import type { Accountability, Item, SchemaOverview } from '../../../types/index.js';
@@ -133,17 +134,15 @@ export class ChatService extends ItemsService {
         throw new Error('Invalid message format');
       }
       
-      const ragContext = await ragService.buildContext(
+      const ragContext = await enhancedRAGService.buildGrantApplicationContext(
         latestMessage.content,
-        chatId,
         {
-          filter: {
-            ...(context?.ngo_id && { ngo_id: context.ngo_id }),
-            ...(context?.grant_id && { grant_id: context.grant_id }),
-            ...(context?.application_id && { application_id: context.application_id }),
-          },
-          limit: 20,
-          includeMetadata: true,
+          chatId,
+          ngo_id: context?.ngo_id,
+          grant_id: context?.grant_id,
+          application_id: context?.application_id,
+          include_web_search: true,
+          prioritize_compliance: true
         }
       );
 
@@ -224,21 +223,22 @@ export class ChatService extends ItemsService {
     let systemMessage = `You are an AI assistant for AntragPlus, helping NGOs with grant applications and management.
 
 Your role is to:
-1. Help NGOs find suitable grants
-2. Assist with grant application writing
-3. Provide guidance on application requirements
-4. Help manage application documents
+1. Help NGOs find suitable grants and funding opportunities
+2. Assist with grant application writing and document creation
+3. Provide current, up-to-date guidance on application requirements
+4. Help manage application documents with version control
 5. Answer questions about NGOs, grants, and applications
+6. Research best practices and current trends in grant writing
 
-You have access to the following tools:
-- createDocument: Create new documents for users
-- searchGrants: Search for grants based on criteria
-- getNGOInfo: Get information about NGOs
-- createApplication: Create grant applications
-- findGrantMatches: Find grants matching an NGO profile
-- updateDocument: Update existing documents
+You have access to comprehensive tools:
+- Web Search: Search the web for current information about grants, funding, best practices
+- Document Management: Create, edit, update, and suggest improvements for grant documents
+- Grant Search: Find grants matching specific criteria in our database
+- NGO Management: Access and update NGO information
+- Application Management: Create and manage grant applications
+- Grant Matching: Find grants that match NGO profiles with AI analysis
 
-Use these tools when appropriate to help users accomplish their tasks.
+When users ask about current funding opportunities, best practices, or recent changes in grant requirements, use web search to provide up-to-date information. For document creation and editing, use the enhanced document tools that support versioning and AI suggestions.
 
 `;
 
@@ -251,12 +251,46 @@ Use these tools when appropriate to help users accomplish their tasks.
       systemMessage += `\nYou are helping discover suitable grants. Focus on matching grants to the NGO's profile and needs.`;
     }
 
-    // Add RAG context
-    if (ragContext.chunks.length > 0) {
-      systemMessage += `\n\nRelevant Context:\n`;
-      
-      for (const chunk of ragContext.chunks) {
-        systemMessage += `\n- ${chunk.source_table}: ${chunk.chunk_text.substring(0, 200)}...`;
+    // Add enhanced RAG context
+    if (ragContext) {
+      // Add compliance notes first (high priority)
+      if (ragContext.compliance_notes && ragContext.compliance_notes.length > 0) {
+        systemMessage += '\n\n🚨 COMPLIANCE REQUIREMENTS:\n';
+        ragContext.compliance_notes.forEach((note: string, index: number) => {
+          systemMessage += `${index + 1}. ${note}\n`;
+        });
+      }
+
+      // Add grant and NGO context
+      if (ragContext.grant_info) {
+        systemMessage += `\n\nGRANT CONTEXT:\n`;
+        systemMessage += `Name: ${ragContext.grant_info.name}\n`;
+        systemMessage += `Provider: ${ragContext.grant_info.provider}\n`;
+        systemMessage += `Deadline: ${ragContext.grant_info.deadline}\n`;
+        systemMessage += `Amount: €${ragContext.grant_info.amount_min} - €${ragContext.grant_info.amount_max}\n`;
+      }
+
+      if (ragContext.ngo_info) {
+        systemMessage += `\n\nNGO CONTEXT:\n`;
+        systemMessage += `Name: ${ragContext.ngo_info.organization_name}\n`;
+        systemMessage += `Field: ${ragContext.ngo_info.field_of_work}\n`;
+        systemMessage += `Size: ${ragContext.ngo_info.company_size}\n`;
+      }
+
+      // Add relevant internal knowledge
+      if (ragContext.chunks && ragContext.chunks.length > 0) {
+        systemMessage += '\n\nRELEVANT INTERNAL KNOWLEDGE:\n';
+        ragContext.chunks.slice(0, 5).forEach((chunk: any, index: number) => {
+          systemMessage += `${index + 1}. [${chunk.source_table}] ${chunk.chunk_text.substring(0, 150)}...\n`;
+        });
+      }
+
+      // Add external insights if available
+      if (ragContext.external_insights && ragContext.external_insights.length > 0) {
+        systemMessage += '\n\nCURRENT EXTERNAL INSIGHTS:\n';
+        ragContext.external_insights.slice(0, 3).forEach((insight: any, index: number) => {
+          systemMessage += `${index + 1}. ${insight.title}\n${insight.content.substring(0, 200)}...\n\n`;
+        });
       }
     }
 

@@ -29,7 +29,7 @@ export class DocumentService extends ItemsService {
   override schema: SchemaOverview;
 
   constructor(options: { accountability: Accountability | null; schema: SchemaOverview }) {
-    super('documents', options);
+    super('application_content', options);
     this.accountability = options.accountability;
     this.schema = options.schema;
   }
@@ -44,7 +44,7 @@ export class DocumentService extends ItemsService {
     try {
       const now = new Date();
 
-      const document:any = await knex('documents').insert({
+      const document:any = await knex('application_content').insert({
         title,
         content,
         content_format: 'markdown', // Default to markdown
@@ -61,7 +61,7 @@ export class DocumentService extends ItemsService {
       // Queue embedding generation for this document
       if (content && document?.id) {
         await knex('embedding_queue').insert({
-          source_table: 'documents',
+          source_table: 'application_content',
           source_id: document.id,
           operation: 'insert',
           priority: 5,
@@ -77,7 +77,7 @@ export class DocumentService extends ItemsService {
         try {
           await knex('ai_activity_logs').insert({
             user_id: created_by,
-            activity_type: 'document_created',
+            activity_type: 'application_content_created',
             entity_type: 'application_content',
             entity_id: document.id,
             description: `Created document: ${title}`,
@@ -112,7 +112,7 @@ export class DocumentService extends ItemsService {
     const knex = getDatabase();
 
     try {
-      let query = knex('documents')
+      let query = knex('application_content')
         .where('created_by', userId)
         .orderBy('updated_at', 'desc');
 
@@ -141,7 +141,7 @@ export class DocumentService extends ItemsService {
     const knex = getDatabase();
 
     try {
-      const document = await knex('documents')
+      const document = await knex('application_content')
         .where('id', documentId)
         .where('created_by', userId)
         .first();
@@ -151,15 +151,15 @@ export class DocumentService extends ItemsService {
       }
 
       // Get versions count
-      const versionCount = await knex('document_versions')
-        .where('document_id', documentId)
+      const versionCount = await knex('application_content_versions')
+        .where('application_content_id', documentId)
         .count('id as count')
         .first();
 
       // Get suggestions count
-      const suggestionCount = await knex('document_suggestions')
-        .where('document_id', documentId)
-        .where('document_created_at', document.created_at)
+      const suggestionCount = await knex('application_content_suggestions')
+        .where('application_content_id', documentId)
+        .where('created_at', document.created_at)
         .where('is_resolved', false)
         .count('id as count')
         .first();
@@ -187,7 +187,7 @@ export class DocumentService extends ItemsService {
 
     try {
       // Get current document
-      const currentDoc = await knex('documents')
+      const currentDoc = await knex('application_content')
         .where('id', documentId)
         .where('created_by', userId)
         .first();
@@ -199,16 +199,16 @@ export class DocumentService extends ItemsService {
       // Create version if content changed
       if (updates.content && updates.content !== currentDoc.content) {
         // Get latest version number
-        const latestVersion = await knex('document_versions')
-          .where('document_id', documentId)
+        const latestVersion = await knex('application_content_versions')
+          .where('application_content_id', documentId)
           .orderBy('version_number', 'desc')
           .first();
 
         const versionNumber = (latestVersion?.version_number || 0) + 1;
 
         // Create version
-        await knex('document_versions').insert({
-          document_id: documentId,
+        await knex('application_content_versions').insert({
+          application_content_id: documentId,
           version_number: versionNumber,
           content: currentDoc.content, // Save the OLD content
           changes: {
@@ -223,7 +223,7 @@ export class DocumentService extends ItemsService {
       }
 
       // Update document
-      const updated = await knex('documents')
+      const updated = await knex('application_content')
         .where('id', documentId)
         .where('created_by', userId)
         .update({
@@ -236,7 +236,7 @@ export class DocumentService extends ItemsService {
       // Queue embedding update if content changed
       if (updates.content) {
         await knex('embedding_queue').insert({
-          source_table: 'documents',
+          source_table: 'application_content',
           source_id: documentId,
           operation: 'update',
           priority: 5,
@@ -254,7 +254,7 @@ export class DocumentService extends ItemsService {
         try {
           await knex('ai_activity_logs').insert({
             user_id: userId,
-            activity_type: 'document_updated',
+            activity_type: 'application_content_updated',
             entity_type: 'application_content',
             entity_id: documentId,
             description: `Updated document: ${updates.title || currentDoc.title}`,
@@ -288,7 +288,7 @@ export class DocumentService extends ItemsService {
 
     try {
       // Verify ownership
-      const document = await knex('documents')
+      const document = await knex('application_content')
         .where('id', documentId)
         .where('created_by', userId)
         .first();
@@ -298,7 +298,7 @@ export class DocumentService extends ItemsService {
       }
 
       // Delete document (cascade will handle related records)
-      await knex('documents')
+      await knex('application_content')
         .where('id', documentId)
         .where('created_at', document.created_at)
         .delete();
@@ -308,7 +308,7 @@ export class DocumentService extends ItemsService {
         try {
           await knex('ai_activity_logs').insert({
             user_id: userId,
-            activity_type: 'document_deleted',
+            activity_type: 'application_content_deleted',
             entity_type: 'application_content',
             entity_id: documentId,
             description: `Deleted document: ${document.title}`,
@@ -347,7 +347,7 @@ export class DocumentService extends ItemsService {
 
     try {
       // Verify ownership
-      const document = await knex('documents')
+      const document = await knex('application_content')
         .where('id', documentId)
         .where('created_by', userId)
         .first();
@@ -357,15 +357,15 @@ export class DocumentService extends ItemsService {
       }
 
       // Get latest version number
-      const latestVersion = await knex('document_versions')
-        .where('document_id', documentId)
+      const latestVersion = await knex('application_content_versions')
+        .where('application_content_id', documentId)
         .orderBy('version_number', 'desc')
         .first();
 
       const versionNumber = (latestVersion?.version_number || 0) + 1;
 
-      const version = await knex('document_versions').insert({
-        document_id: documentId,
+      const version = await knex('application_content_versions').insert({
+        application_content_id: documentId,
         version_number: versionNumber,
         content: versionData.content,
         changes: versionData.changes || {},
@@ -389,7 +389,7 @@ export class DocumentService extends ItemsService {
 
     try {
       // Verify ownership
-      const document = await knex('documents')
+      const document = await knex('application_content')
         .where('id', documentId)
         .where('created_by', userId)
         .first();
@@ -398,8 +398,8 @@ export class DocumentService extends ItemsService {
         throw new Error('Document not found');
       }
 
-      const versions = await knex('document_versions')
-        .where('document_id', documentId)
+      const versions = await knex('application_content_versions')
+        .where('application_content_id', documentId)
         .orderBy('version_number', 'desc');
 
       return versions;
@@ -421,7 +421,7 @@ export class DocumentService extends ItemsService {
 
     try {
       // Get document
-      const document = await knex('documents')
+      const document = await knex('application_content')
         .where('id', documentId)
         .where('created_by', userId)
         .first();
@@ -473,9 +473,8 @@ export class DocumentService extends ItemsService {
       // Store suggestions in database
       const storedSuggestions = [];
       for (const suggestion of suggestions) {
-        const stored = await knex('document_suggestions').insert({
-          document_id: documentId,
-          document_created_at: document.created_at,
+        const stored = await knex('application_content_suggestions').insert({
+          application_content_id: documentId,
           original_text: suggestion.original_text,
           suggested_text: suggestion.suggested_text,
           description: suggestion.description,
@@ -604,7 +603,7 @@ export class DocumentService extends ItemsService {
 
     try {
       // Verify ownership
-      const document = await knex('documents')
+      const document = await knex('application_content')
         .where('id', documentId)
         .where('created_by', userId)
         .first();
@@ -613,9 +612,9 @@ export class DocumentService extends ItemsService {
         throw new Error('Document not found');
       }
 
-      let query = knex('document_suggestions')
-        .where('document_id', documentId)
-        .where('document_created_at', document.created_at)
+      let query = knex('application_content_suggestions')
+        .where('application_content_id', documentId)
+        .where('created_at', document.created_at)
         .orderBy('created_at', 'desc');
 
       if (filters.resolved !== undefined) {
