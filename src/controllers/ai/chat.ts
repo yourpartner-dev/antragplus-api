@@ -37,7 +37,7 @@ router.post(
       throw new ForbiddenError();
     }
 
-    const { messages, context, model, temperature } = value;
+    const { messages, context, temperature } = value;
     const accountability = req.accountability;
     const userId = accountability?.user;
     const schema = req.schema;
@@ -54,24 +54,29 @@ router.post(
       schema: schema as SchemaOverview,
     });
 
-    // Create or get chat
-    const chat = await service.createOrGetChat({
+    // Validate application context (required for all chats)
+    if (!context?.ngo_id || !context?.grant_id || !context?.application_id) {
+      throw new InvalidPayloadError({
+        reason: 'Application context required: ngo_id, grant_id, and application_id must be provided'
+      });
+    }
+
+    // For application context, create or get the single chat for this application
+    const chat = await service.createOrGetApplicationChat({
       messages,
       userId: userId as string,
       context,
-      model: model || 'gpt-5-nano-2025-08-07',
       temperature: temperature || 0.7,
     });
 
     // Set payload for the chat creation response
     res.locals['payload'] = { data: chat };
 
-    // Stream the response
+    // Stream the response (model is determined internally by service based on context)
     await service.streamChatResponse({
       chatId: chat.id,
       messages,
       context,
-      model: model || 'gpt-5-nano-2025-08-07',
       temperature: temperature || 0.7,
       stream: res,
     });
@@ -137,6 +142,42 @@ router.get(
     if (!chat) {
       return res.status(404).json({
         errors: [{ message: 'Chat not found' }],
+      });
+    }
+
+    res.locals['payload'] = { data: chat };
+    return next();
+  }),
+  respond
+);
+
+/**
+ * Get chat by application ID (for frontend to fetch the single chat per application)
+ */
+router.get(
+  '/application/:applicationId',
+  asyncHandler(async (req: Request, res: Response, next) => {
+    const { applicationId } = req.params;
+
+    if (!req.accountability?.user) {
+      throw new ForbiddenError();
+    }
+
+    if (!applicationId || !isValidUuid(applicationId)) {
+      throw new InvalidPayloadError({ reason: 'Application ID missing or not valid' });
+    }
+
+    const service = new ChatService({
+      accountability: req.accountability as Accountability,
+      schema: req.schema as SchemaOverview,
+    });
+
+    const chat = await service.getChatByApplicationId(applicationId);
+
+    if (!chat) {
+      return res.status(404).json({
+        data: null,
+        message: 'No chat found for this application'
       });
     }
 

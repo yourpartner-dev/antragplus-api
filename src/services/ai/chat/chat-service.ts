@@ -1,12 +1,12 @@
 import { streamText } from 'ai';
-import { getOpenAIModel } from '../providers.js';
+import { applicationCreationModel } from '../providers.js';
 import { useLogger } from '../../../helpers/logger/index.js';
 import { ItemsService } from '../../items.js';
 import getDatabase from '../../../database/index.js';
-import { ragService } from '../../rag-service.js';
 import { enhancedRAGService } from '../enhanced-rag-service.js';
 import { getChatTools } from '../tools/chat-tools.js';
 import { QueueManager } from '../../queues/queue-manager.js';
+import { autoFetchURLsFromText } from '../tools/url-fetch-tool.js';
 import type { Accountability, Item, SchemaOverview } from '../../../types/index.js';
 import type { Response } from 'express';
 import type { ModelMessage } from 'ai';
@@ -32,7 +32,7 @@ export interface StreamChatOptions {
   chatId: string;
   messages: ModelMessage[];
   context?: ChatContext;
-  model: string;
+  model?: string; // Optional - determined by context
   temperature?: number;
   stream: Response;
 }
@@ -122,10 +122,127 @@ export class ChatService extends ItemsService {
   }
 
   /**
+   * Create or get the single chat for an application (one chat per application)
+   */
+  async createOrGetApplicationChat(options: {
+    messages: ModelMessage[];
+    userId: string;
+    context: ChatContext;
+    temperature?: number;
+  }) {
+    const { messages, userId, context } = options;
+    const knex = getDatabase();
+
+    try {
+      // Ensure we have all required context for application
+      if (!context.application_id || !context.ngo_id || !context.grant_id) {
+        throw new Error('Application context requires application_id, ngo_id, and grant_id');
+      }
+
+      // Check if chat already exists for this application
+      const existingChat = await knex('chats')
+        .where('application_id', context.application_id)
+        .where('status', 'active')
+        .first();
+
+      if (existingChat) {
+        logger.info(`Using existing chat ${existingChat.id} for application ${context.application_id}`);
+        return existingChat;
+      }
+
+      // Create new chat for this application
+      const firstMessage = messages[0];
+      const title = firstMessage && typeof firstMessage.content === 'string'
+        ? `Application Chat: ${firstMessage.content.substring(0, 60)}...`
+        : 'Application Chat';
+
+      const [chat] = await knex('chats').insert({
+        title,
+        ngo_id: context.ngo_id,
+        application_id: context.application_id,
+        grant_id: context.grant_id,
+        context_type: 'application',
+        visibility: 'private',
+        status: 'active',
+        metadata: {
+          application_context: true,
+          created_for_application: context.application_id
+        },
+        created_at: new Date(),
+        created_by: userId,
+      }).returning('*');
+
+      // Log activity
+      if (userId && chat['id']) {
+        try {
+          await knex('ai_activity_logs').insert({
+            user_id: userId,
+            activity_type: 'application_chat_created',
+            entity_type: 'chats',
+            entity_id: chat['id'],
+            description: `Created application chat for application ${context.application_id}`,
+            metadata: {
+              context_type: 'application',
+              ngo_id: context.ngo_id,
+              grant_id: context.grant_id,
+              application_id: context.application_id,
+            },
+            ip_address: this.accountability?.ip || null,
+            user_agent: this.accountability?.userAgent || null,
+            created_at: new Date()
+          });
+        } catch (logError) {
+          logger.error(logError, 'Failed to log application chat creation activity');
+        }
+      }
+
+      logger.info(`Created new application chat ${chat['id']} for application ${context.application_id}`);
+      return chat;
+
+    } catch (error) {
+      logger.error(error, 'Error creating application chat');
+      throw error;
+    }
+  }
+
+  /**
+   * Get chat by application ID for frontend
+   */
+  async getChatByApplicationId(applicationId: string) {
+    const knex = getDatabase();
+
+    try {
+      const chat = await knex('chats')
+        .where('application_id', applicationId)
+        .where('status', 'active')
+        .first();
+
+      if (!chat) {
+        return null;
+      }
+
+      // Get recent messages for this chat
+      const messages = await knex('chat_messages')
+        .where('chat_id', chat.id)
+        .orderBy('created_at', 'asc')
+        .limit(50); // Limit to last 50 messages
+
+      return {
+        ...chat,
+        messages
+      };
+
+    } catch (error) {
+      logger.error(error, 'Error getting chat by application ID');
+      throw error;
+    }
+  }
+
+  /**
    * Stream chat response using Vercel AI SDK
    */
   async streamChatResponse(options: StreamChatOptions) {
-    const { chatId, messages, context, model, temperature, stream } = options;
+    const { chatId, messages, context, temperature, stream } = options;
 
     try {
       // Build RAG context based on the latest message
@@ -133,21 +250,53 @@ export class ChatService extends ItemsService {
       if (!latestMessage || typeof latestMessage.content !== 'string') {
         throw new Error('Invalid message format');
       }
-      
-      const ragContext = await enhancedRAGService.buildGrantApplicationContext(
-        latestMessage.content,
+
+      // Auto-detect and fetch URLs from user message with context
+      let enhancedContent = latestMessage.content;
+
+      // Build user context from the actual conversation and message
+      const conversationContext = messages.slice(-6).map(m => `${m.role}: ${m.content}`).join('\n');
+      const userContext = `User's current question/context: "${latestMessage.content}"\n\nRecent conversation:\n${conversationContext}`;
+
+      const fetchedURLs = await autoFetchURLsFromText(latestMessage.content, userContext);
+
+      if (fetchedURLs.length > 0) {
+        logger.info(`✅ Auto-fetched and analyzed ${fetchedURLs.length} URL(s) for context`);
+
+        // Add structured analyzed content to message context
+        const urlContexts = fetchedURLs.map(url => {
+          return `URL: ${url.url}
+Title: ${url.title}
+Content Type: ${url.contentType}
+Summary: ${url.summary}
+Key Insights: ${url.keyInsights.join('; ')}
+Relevance: ${url.relevanceToUser}
+---
+Raw Content: ${url.content.substring(0, 1500)}`;
+        }).join('\n\n---\n\n');
+
+        enhancedContent = `${latestMessage.content}\n\n[AI-analyzed URL content for context:]\n${urlContexts}`;
+      }
+
+      // Chat is ALWAYS in context of NGO + Grant + Application creation
+      // Use comprehensive application context with required IDs
+      if (!context?.ngo_id || !context?.grant_id) {
+        throw new Error('Chat requires NGO ID and Grant ID context');
+      }
+
+      const ragContext = await enhancedRAGService.buildCompleteApplicationContext(
+        enhancedContent,
         {
-          chatId,
-          ngo_id: context?.ngo_id,
-          grant_id: context?.grant_id,
-          application_id: context?.application_id,
+          ngo_id: context.ngo_id,
+          grant_id: context.grant_id,
+          application_id: context.application_id!,
           include_web_search: true,
           prioritize_compliance: true
         }
       );
 
-      // Build system message with context
-      const systemMessage = this.buildSystemMessage(ragContext, context);
+      // Build system message for application context
+      const systemMessage = this.buildApplicationSystemMessage(ragContext);
 
       // Add context as the first message
       const messagesWithContext: ModelMessage[] = [
@@ -166,18 +315,20 @@ export class ChatService extends ItemsService {
         this.accountability?.user || null
       );
 
-      // Get available tools
+      // Get application-specific tools
       const tools = getChatTools({
         accountability: this.accountability,
         schema: this.schema,
         userId: this.accountability?.user || null,
+        applicationContext: context,
       });
 
-      // Stream the response with tools
+      // Always use applicationCreationModel for grant application context
+      const selectedModel = applicationCreationModel();
       const result = await streamText({
-        model: getOpenAIModel(model),
+        model: selectedModel,
         messages: messagesWithContext,
-        ...(temperature !== undefined && { temperature }),
+        temperature: temperature || 0.7,
         tools,
         toolChoice: 'auto', // Let the model decide when to use tools
         onFinish: async (result) => {
@@ -188,7 +339,6 @@ export class ChatService extends ItemsService {
               content: result.text,
               role: 'assistant',
               metadata: {
-                model,
                 usage: result.usage,
                 finishReason: result.finishReason,
                 toolCalls: result.toolCalls,
@@ -217,96 +367,103 @@ export class ChatService extends ItemsService {
   }
 
   /**
-   * Build system message with RAG context
+   * Build system message specifically for application context (NEW - replaces buildSystemMessage)
    */
-  private buildSystemMessage(ragContext: any, chatContext?: ChatContext): string {
-    let systemMessage = `You are an AI assistant for AntragPlus, helping NGOs with grant applications and management.
+  private buildApplicationSystemMessage(ragContext: any): string {
+    let systemMessage = `You are an AI assistant specializing in grant application creation and editing for AntragPlus.
 
-Your role is to:
-1. Help NGOs find suitable grants and funding opportunities
-2. Assist with grant application writing and document creation
-3. Provide current, up-to-date guidance on application requirements
-4. Help manage application documents with version control
-5. Answer questions about NGOs, grants, and applications
-6. Research best practices and current trends in grant writing
+CONTEXT: You are working within an application workspace where you help create, edit, and manage grant application documents.
 
-You have access to comprehensive tools:
-- Web Search: Search the web for current information about grants, funding, best practices
-- Document Management: Create, edit, update, and suggest improvements for grant documents
-- Grant Search: Find grants matching specific criteria in our database
-- NGO Management: Access and update NGO information
-- Application Management: Create and manage grant applications
-- Grant Matching: Find grants that match NGO profiles with AI analysis
+Your capabilities:
+- Create new application documents (proposals, budgets, timelines, cover letters, etc.)
+- Edit existing application documents with precision
+- Delete documents when requested
+- Regenerate content based on updated context
+- Provide grant-specific guidance using exact requirements
+- Ensure compliance with all grant guidelines
 
-When users ask about current funding opportunities, best practices, or recent changes in grant requirements, use web search to provide up-to-date information. For document creation and editing, use the enhanced document tools that support versioning and AI suggestions.
+IMPORTANT: You are working with a specific grant and NGO combination. All documents you create must be tailored to:
+- The specific grant requirements and terminology
+- The NGO's profile, capabilities, and track record
+- The application's current state and existing documents
 
 `;
 
-    // Add specific context based on chat type
-    if (chatContext?.context_type === 'application_edit') {
-      systemMessage += `\nYou are currently helping edit a grant application. Focus on improving the content, structure, and alignment with grant requirements.`;
-    } else if (chatContext?.context_type === 'ngo_onboarding') {
-      systemMessage += `\nYou are helping onboard a new NGO. Gather relevant information about their organization, mission, and funding needs.`;
-    } else if (chatContext?.context_type === 'grant_discovery') {
-      systemMessage += `\nYou are helping discover suitable grants. Focus on matching grants to the NGO's profile and needs.`;
+    // Add grant context
+    if (ragContext.grant_details?.info) {
+      systemMessage += `CURRENT GRANT:
+Name: ${ragContext.grant_details.info.name}
+Provider: ${ragContext.grant_details.info.provider}
+Deadline: ${ragContext.grant_details.info.deadline}
+Amount: €${ragContext.grant_details.info.amount_min} - €${ragContext.grant_details.info.amount_max}
+Language: ${ragContext.grant_details.language_requirements}
+
+GRANT REQUIREMENTS:
+${ragContext.grant_details.requirements_matrix.join('\n')}
+
+SUBMISSION GUIDELINES:
+${ragContext.grant_details.submission_guidelines.join('\n')}
+
+`;
     }
 
-    // Add enhanced RAG context
-    if (ragContext) {
-      // Add compliance notes first (high priority)
-      if (ragContext.compliance_notes && ragContext.compliance_notes.length > 0) {
-        systemMessage += '\n\n🚨 COMPLIANCE REQUIREMENTS:\n';
-        ragContext.compliance_notes.forEach((note: string, index: number) => {
-          systemMessage += `${index + 1}. ${note}\n`;
-        });
-      }
+    // Add NGO context
+    if (ragContext.ngo_details?.info) {
+      systemMessage += `CURRENT NGO:
+Organization: ${ragContext.ngo_details.info.organization_name}
+Field of Work: ${ragContext.ngo_details.info.field_of_work}
+Company Size: ${ragContext.ngo_details.info.company_size}
+Location: ${ragContext.ngo_details.info.location}
 
-      // Add grant and NGO context
-      if (ragContext.grant_info) {
-        systemMessage += `\n\nGRANT CONTEXT:\n`;
-        systemMessage += `Name: ${ragContext.grant_info.name}\n`;
-        systemMessage += `Provider: ${ragContext.grant_info.provider}\n`;
-        systemMessage += `Deadline: ${ragContext.grant_info.deadline}\n`;
-        systemMessage += `Amount: €${ragContext.grant_info.amount_min} - €${ragContext.grant_info.amount_max}\n`;
-      }
+NGO CAPABILITIES:
+${ragContext.ngo_details.capabilities.join('\n')}
 
-      if (ragContext.ngo_info) {
-        systemMessage += `\n\nNGO CONTEXT:\n`;
-        systemMessage += `Name: ${ragContext.ngo_info.organization_name}\n`;
-        systemMessage += `Field: ${ragContext.ngo_info.field_of_work}\n`;
-        systemMessage += `Size: ${ragContext.ngo_info.company_size}\n`;
-      }
+TRACK RECORD:
+- Total Applications: ${ragContext.ngo_details.financial_track_record.total_applications}
+- Success Rate: ${ragContext.ngo_details.financial_track_record.success_rate}%
+- Total Funding: €${ragContext.ngo_details.financial_track_record.total_funding_awarded}
 
-      // Add relevant internal knowledge
-      if (ragContext.chunks && ragContext.chunks.length > 0) {
-        systemMessage += '\n\nRELEVANT INTERNAL KNOWLEDGE:\n';
-        ragContext.chunks.slice(0, 5).forEach((chunk: any, index: number) => {
-          systemMessage += `${index + 1}. [${chunk.source_table}] ${chunk.chunk_text.substring(0, 150)}...\n`;
-        });
-      }
-
-      // Add external insights if available
-      if (ragContext.external_insights && ragContext.external_insights.length > 0) {
-        systemMessage += '\n\nCURRENT EXTERNAL INSIGHTS:\n';
-        ragContext.external_insights.slice(0, 3).forEach((insight: any, index: number) => {
-          systemMessage += `${index + 1}. ${insight.title}\n${insight.content.substring(0, 200)}...\n\n`;
-        });
-      }
+`;
     }
 
-    // Add current entities if available
-    if (chatContext?.ngo_id) {
-      systemMessage += `\n\nCurrent NGO ID: ${chatContext.ngo_id}`;
+    // Add current application documents context
+    if (ragContext.application_status?.existing_content?.length > 0) {
+      systemMessage += `CURRENT APPLICATION DOCUMENTS:
+${ragContext.application_status.existing_content.map((doc: any) =>
+  `- ${doc.title} (${doc.kind}) - ${doc.updated_at}`
+).join('\n')}
+
+`;
     }
-    if (chatContext?.grant_id) {
-      systemMessage += `\nCurrent Grant ID: ${chatContext.grant_id}`;
+
+    // Add compliance requirements
+    if (ragContext.compliance_matrix?.required_documents?.length > 0) {
+      systemMessage += `REQUIRED DOCUMENTS:
+${ragContext.compliance_matrix.required_documents.join('\n')}
+
+`;
     }
-    if (chatContext?.application_id) {
-      systemMessage += `\nCurrent Application ID: ${chatContext.application_id}`;
+
+    // Add historical context
+    if (ragContext.historical_examples?.best_practices?.length > 0) {
+      systemMessage += `BEST PRACTICES:
+${ragContext.historical_examples.best_practices.join('\n')}
+
+`;
     }
+
+    systemMessage += `When users request document operations:
+- Use createApplicationDocument to create new documents
+- Use updateApplicationDocument to edit existing documents
+- Use deleteApplicationDocument to remove documents
+- Always specify the correct document kind (proposal, budget, timeline, cover_letter, etc.)
+- Include the current application_id, ngo_id, and grant_id in your operations
+
+Remember: Every operation should be informed by the specific grant requirements and NGO capabilities listed above.`;
 
     return systemMessage;
   }
+
 
   /**
    * Get all chats for a user

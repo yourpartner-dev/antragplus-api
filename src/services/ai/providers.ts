@@ -1,5 +1,6 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createAnthropic } from '@ai-sdk/anthropic';
 import type { LanguageModel } from 'ai';
 import { useEnv } from '../../helpers/env/index.js';
 
@@ -19,6 +20,12 @@ export const openai = createOpenAI({
 export const google = createGoogleGenerativeAI({
   apiKey: env['GEMINI_API_KEY'] as string || '',
 });
+/**
+ * Configured Anthropic provider with API key from environment
+ */
+export const anthropic = createAnthropic({
+  apiKey: env['ANTHROPIC_API_KEY'] as string || '',
+});
 
 // Export a helper to get the default model
 export function getOpenAIModel(modelName?: string): LanguageModel {
@@ -36,4 +43,10 @@ export function getGrantExtractionModel(): LanguageModel {
 export function getGrantMatchingModel(): LanguageModel {
   const model = env['GEMINI_MODEL'] as string || 'gemini-2.5-flash';
   return google(model);
+}
+
+// Export helper for grant matching using Gemini (large context window for documents)
+export function applicationCreationModel(): LanguageModel {
+  const model = env['ANTRHOPIC_MODEL'] as string || 'claude-opus-4-20250514';
+  return anthropic(model);
 }

@@ -2,7 +2,6 @@ import { useLogger } from '../../../helpers/logger/index.js';
 import { ItemsService } from '../../items.js';
 import getDatabase from '../../../database/index.js';
 import type { Accountability, SchemaOverview } from '../../../types/index.js';
-import { DocumentService } from '../documents/application-content-service.js';
 
 const logger = useLogger();
 
@@ -154,16 +153,15 @@ export class SuggestionService extends ItemsService {
 
       const newContent = document.content.replace(textToReplace, replacementText);
 
-      // Update the document
-      const documentService = new DocumentService({
+      // Update the document using ItemsService
+      const documentService = new ItemsService('application_content', {
         accountability: this.accountability,
         schema: this.schema,
       });
 
-      const updatedDocument = await documentService.updateDocument(
+      const updatedDocument = await documentService.updateOne(
         document.id,
-        { content: newContent },
-        userId
+        { content: newContent }
       );
 
       // Mark suggestion as resolved

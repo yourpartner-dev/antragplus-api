@@ -183,7 +183,7 @@ export abstract class BaseQueue {
       if (!result || result.length === 0) return null;
 
       const streamData = result[0];
-      if (!streamData || streamData.length < 2) return null;
+      if (!streamData || !Array.isArray(streamData) || streamData.length < 2) return null;
 
       const messages = streamData[1];
       if (!messages || messages.length === 0) return null;
