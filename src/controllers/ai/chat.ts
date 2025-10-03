@@ -26,7 +26,7 @@ const router = express.Router();
 
 router.post(
   '/',
-  asyncHandler(async (req, res, next) => {
+  asyncHandler(async (req, res) => {
     // Validate request body
     const { error, value } = createChatSchema.validate(req.body);
     if (error) {
@@ -83,7 +83,6 @@ router.post(
 
     // End the response after streaming is complete
     res.end();
-    return next();
   })
 );
 

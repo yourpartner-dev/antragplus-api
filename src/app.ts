@@ -241,7 +241,7 @@ export default async function createApp(): Promise<express.Application> {
 	app.use('/utils', utilsRouter);
 
 	// AI routes
-	app.use('/api/ai', aiRouter);
+	app.use('/ai', aiRouter);
 
 	app.use(notFoundHandler);
 	app.use(errorHandler);

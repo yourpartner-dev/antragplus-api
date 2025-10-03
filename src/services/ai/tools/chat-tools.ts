@@ -4,6 +4,7 @@ import { ItemsService } from '../../items.js';
 import type { Accountability, SchemaOverview } from '../../../types/index.js';
 import { getWebSearchTools } from './web-search-tools.js';
 import type { ChatContext } from '../chat/chat-service.js';
+import getDatabase from '../../../database/index.js';
 
 /**
  * Define available tools for the chat AI (APPLICATION CONTEXT ONLY)
@@ -145,7 +146,7 @@ export function getChatTools(options: {
 
     // GRANT AND NGO INFORMATION TOOLS (for context only)
     getCurrentGrantInfo: tool({
-      description: 'Get current grant information and requirements',
+      description: 'Get complete grant information including ALL requirements, submission guidelines, and formatting requirements. Use this when you need detailed grant specifications.',
       inputSchema: z.object({}),
       execute: async () => {
         if (!applicationContext?.grant_id) {
@@ -155,29 +156,92 @@ export function getChatTools(options: {
         const service = new ItemsService('grants', { accountability, schema });
         const grant = await service.readOne(applicationContext.grant_id);
 
+        // Extract detailed requirements from metadata and extracted_requirements
+        const extractedRequirements = grant['extracted_requirements'] || [];
+        const metadataRequirements = grant['metadata']?.requirements || [];
+        const allRequirements = [...extractedRequirements, ...metadataRequirements];
+
         return {
           success: true,
-          grant,
-          message: 'Retrieved current grant information',
+          grant: {
+            basic_info: {
+              name: grant['name'],
+              provider: grant['provider'],
+              category: grant['category'],
+              deadline: grant['deadline'],
+              amount_min: grant['amount_min'],
+              amount_max: grant['amount_max'],
+              currency: grant['currency'],
+            },
+            requirements: allRequirements,
+            submission_guidelines: grant['metadata']?.submission_guidelines || [],
+            formatting_requirements: grant['metadata']?.formatting_requirements || [],
+            language_requirements: grant['metadata']?.language || grant['language'] || 'Not specified',
+            eligibility: grant['metadata']?.eligibility || [],
+            focus_areas: grant['focus_areas'] || grant['metadata']?.focus_areas || [],
+          },
+          message: `Retrieved complete information for grant: ${grant['name']} (${allRequirements.length} requirements documented)`,
         };
       },
     }),
 
     getCurrentNGOInfo: tool({
-      description: 'Get current NGO information and capabilities',
+      description: 'Get complete NGO information including capabilities, track record, and past applications. Use this when you need to understand what the NGO can do or has accomplished.',
       inputSchema: z.object({}),
       execute: async () => {
         if (!applicationContext?.ngo_id) {
           throw new Error('NGO context required');
         }
 
+        const db = getDatabase();
         const service = new ItemsService('ngos', { accountability, schema });
         const ngo = await service.readOne(applicationContext.ngo_id);
 
+        // Get recent past applications (limited to 5 by default)
+        const pastApplications = await db('applications')
+          .leftJoin('grants', 'applications.grant_id', 'grants.id')
+          .where('applications.ngo_id', applicationContext.ngo_id)
+          .where('applications.status', '!=', 'draft')
+          .select(
+            'applications.id',
+            'applications.status',
+            'applications.created_at',
+            'grants.name as grant_name',
+            'grants.provider as grant_provider',
+            'grants.amount_max as grant_amount'
+          )
+          .orderBy('applications.created_at', 'desc')
+          .limit(5);
+
+        // Extract capabilities from NGO metadata
+        const capabilities = ngo['capabilities'] || ngo['metadata']?.capabilities || [];
+        const teamExpertise = ngo['metadata']?.team_expertise || [];
+
+        // Calculate track record
+        const successfulApps = pastApplications.filter((app: any) => app.status === 'won').length;
+        const totalApps = pastApplications.length;
+        const successRate = totalApps > 0 ? Math.round((successfulApps / totalApps) * 100) : 0;
+
         return {
           success: true,
-          ngo,
-          message: 'Retrieved current NGO information',
+          ngo: {
+            basic_info: {
+              organization_name: ngo['organization_name'],
+              field_of_work: ngo['field_of_work'],
+              company_size: ngo['company_size'],
+              location: ngo['location'],
+              about: ngo['about'],
+            },
+            capabilities: capabilities,
+            team_expertise: teamExpertise,
+            track_record: {
+              total_applications: totalApps,
+              successful_applications: successfulApps,
+              success_rate: successRate,
+              recent_applications: pastApplications,
+            },
+          },
+          message: `Retrieved NGO information for ${ngo['organization_name']} (${totalApps} past applications, ${successRate}% success rate)`,
         };
       },
     }),
@@ -266,7 +330,7 @@ export function getChatTools(options: {
     }),
 
     searchGrants: tool({
-      description: 'Search for grants in the database, with web search fallback',
+      description: 'Search for grants in the database including matched grants for the current NGO, with web search fallback. Always inform user about search progress.',
       inputSchema: z.object({
         query: z.string().describe('Search query for grant name or description'),
         category: z.string().optional().describe('Filter by category'),
@@ -276,8 +340,31 @@ export function getChatTools(options: {
       }),
       execute: async ({ query, category, provider, min_amount, web_fallback }) => {
         const grantService = new ItemsService('grants', { accountability, schema });
+        const matchService = new ItemsService('grant_matches', { accountability, schema });
 
-        // First search the database
+        // Step 1: Check grant_matches table first (for current NGO if available)
+        let matchedGrants: any[] = [];
+        if (applicationContext?.ngo_id) {
+          try {
+            const matchFilter: any = {
+              ngo_id: { _eq: applicationContext.ngo_id },
+              _or: [
+                { 'grant_id.name': { _icontains: query } },
+                { 'grant_id.description': { _icontains: query } },
+              ]
+            };
+
+            matchedGrants = await matchService.readByQuery({
+              filter: matchFilter,
+              limit: 10,
+              fields: ['*', 'grant_id.*'],
+            });
+          } catch (err) {
+            // grant_matches might not exist or query failed, continue to regular search
+          }
+        }
+
+        // Step 2: Search regular grants table
         const filter: any = {
           _or: [
             { name: { _icontains: query } },
@@ -294,18 +381,50 @@ export function getChatTools(options: {
           limit: 10,
         });
 
+        // Combine results (matched grants + regular grants)
+        const allResults = [];
+
+        if (matchedGrants.length > 0) {
+          allResults.push(...matchedGrants.map((match: any) => ({
+            ...match.grant_id,
+            match_score: match.match_score,
+            match_status: match.match_status,
+            is_matched_for_ngo: true,
+          })));
+        }
+
+        // Add regular grants that aren't already in matched results
+        const matchedGrantIds = new Set(matchedGrants.map((m: any) => m.grant_id?.['id']));
+        for (const grant of dbResults) {
+          if (!matchedGrantIds.has(grant['id'])) {
+            allResults.push({
+              ...grant,
+              is_matched_for_ngo: false,
+            });
+          }
+        }
+
         // If we found results in database, return them
-        if (dbResults.length > 0) {
+        if (allResults.length > 0) {
+          const matchedCount = matchedGrants.length;
+          const totalCount = allResults.length;
+
+          let message = `Found ${totalCount} grant${totalCount !== 1 ? 's' : ''} matching "${query}"`;
+          if (matchedCount > 0) {
+            message += ` (${matchedCount} already analyzed for this NGO with match scores)`;
+          }
+
           return {
             success: true,
             source: 'database',
-            results: dbResults,
-            count: dbResults.length,
-            message: `Found ${dbResults.length} grants in database matching "${query}"`,
+            results: allResults,
+            matched_grants_count: matchedCount,
+            total_count: totalCount,
+            message,
           };
         }
 
-        // No database results - search web if enabled
+        // No database results - inform user and search web if enabled
         if (web_fallback) {
           const webQuery = `grant funding "${query}" ${category ? category : ''} ${provider ? provider : ''} Germany nonprofit`;
 
@@ -324,14 +443,15 @@ export function getChatTools(options: {
               success: true,
               source: 'web',
               results: webResults,
-              count: 0,
-              message: `No grants found in database. Found web information about "${query}"`,
+              matched_grants_count: 0,
+              total_count: 0,
+              message: `I couldn't find relevant grants in our database for "${query}", so I searched the web and found some information.`,
             };
           } catch (webError) {
             return {
               success: false,
               source: 'none',
-              message: `No grants found in database and web search failed for "${query}"`,
+              message: `I couldn't find any grants in our database matching "${query}" and the web search also failed.`,
             };
           }
         }
@@ -339,7 +459,7 @@ export function getChatTools(options: {
         return {
           success: false,
           source: 'database',
-          message: `No grants found in database for "${query}"`,
+          message: `I couldn't find any grants in our database matching "${query}". You may want to try different search terms or ask me to search the web.`,
         };
       },
     }),
@@ -374,6 +494,103 @@ export function getChatTools(options: {
             language_requirement: grant['language'] || 'de-DE',
           },
           message: 'Compliance analysis completed',
+        };
+      },
+    }),
+
+    getApplicationProgress: tool({
+      description: 'Get current progress of application creation including which documents exist and grant requirements. After calling this tool, ALWAYS respond to the user with a summary of the progress.',
+      inputSchema: z.object({}),
+      execute: async () => {
+        if (!applicationContext?.application_id) {
+          throw new Error('Application context required');
+        }
+
+        const contentService = new ItemsService('application_content', { accountability, schema });
+        const grantService = new ItemsService('grants', { accountability, schema });
+        const applicationService = new ItemsService('applications', { accountability, schema });
+
+        // Get existing documents
+        const existingDocuments = await contentService.readByQuery({
+          filter: { application_id: { _eq: applicationContext.application_id } },
+          sort: ['-created_at'],
+          fields: ['id', 'title', 'kind', 'created_at', 'updated_at'],
+        });
+
+        // Get grant and application info
+        const grant = await grantService.readOne(applicationContext.grant_id as string);
+        const application = await applicationService.readOne(applicationContext.application_id);
+
+        // Extract requirements from grant metadata and extracted_requirements
+        const grantRequirements = grant['extracted_requirements'] || grant['metadata']?.requirements || [];
+        const requiredDocTypes = grant['metadata']?.required_document_types || [];
+
+        // Calculate what's been created
+        const createdTypes = existingDocuments.map((doc: any) => doc.kind);
+        const documentsByType = existingDocuments.reduce((acc: any, doc: any) => {
+          if (!acc[doc.kind]) acc[doc.kind] = [];
+          acc[doc.kind].push({ id: doc.id, title: doc.title });
+          return acc;
+        }, {});
+
+        return {
+          success: true,
+          progress: {
+            documents_created: existingDocuments.length,
+            documents_by_type: documentsByType,
+            created_document_types: [...new Set(createdTypes)],
+            grant_name: grant['name'],
+            grant_deadline: grant['deadline'],
+            grant_requirements: grantRequirements,
+            required_document_types: requiredDocTypes,
+            application_status: application['status'],
+            last_updated: existingDocuments[0]?.['updated_at'] || application['updated_at'],
+          },
+          documents: existingDocuments,
+          message: `Application progress: ${existingDocuments.length} documents created. Grant deadline: ${grant['deadline']}`,
+        };
+      },
+    }),
+
+    getPastApplications: tool({
+      description: 'Get past applications for the current NGO with optional limit. Use this when user asks for "all" applications or more than the 5 shown by default.',
+      inputSchema: z.object({
+        limit: z.number().optional().describe('Number of applications to retrieve. Default is 10. Use 0 for all applications.'),
+      }),
+      execute: async ({ limit = 10 }) => {
+        if (!applicationContext?.ngo_id) {
+          throw new Error('NGO context required');
+        }
+
+        const db = getDatabase();
+        let query = db('applications')
+          .leftJoin('grants', 'applications.grant_id', 'grants.id')
+          .where('applications.ngo_id', applicationContext.ngo_id)
+          .where('applications.status', '!=', 'draft')
+          .select(
+            'applications.id',
+            'applications.status',
+            'applications.created_at',
+            'applications.updated_at',
+            'grants.name as grant_name',
+            'grants.provider as grant_provider',
+            'grants.amount_max as grant_amount',
+            'grants.deadline as grant_deadline'
+          )
+          .orderBy('applications.created_at', 'desc');
+
+        // Apply limit if specified (0 means all)
+        if (limit > 0) {
+          query = query.limit(limit);
+        }
+
+        const applications = await query;
+
+        return {
+          success: true,
+          applications,
+          count: applications.length,
+          message: `Retrieved ${applications.length} past application${applications.length !== 1 ? 's' : ''} for this NGO`,
         };
       },
     }),

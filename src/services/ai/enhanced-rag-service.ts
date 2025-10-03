@@ -388,10 +388,10 @@ export class EnhancedRAGService extends RAGService {
         .select(
           'yp_files.*',
           'document_extracts.content_text',
-          'ngo_documents.document_type'
+          'ngo_documents.metadata'
         );
 
-      // Get ALL past applications (not just 5)
+      // Get recent past applications (limited to 5 for performance - AI can fetch more via tool if needed)
       const pastApplications = await this.db('applications')
         .leftJoin('grants', 'applications.grant_id', 'grants.id')
         .where('applications.ngo_id', ngoId)
@@ -402,7 +402,8 @@ export class EnhancedRAGService extends RAGService {
           'grants.provider as grant_provider',
           'grants.category as grant_category'
         )
-        .orderBy('applications.created_at', 'desc');
+        .orderBy('applications.created_at', 'desc')
+        .limit(5);
 
       // Extract capabilities from NGO data
       const capabilities = this.extractNGOCapabilities(ngo, documents);
@@ -441,20 +442,28 @@ export class EnhancedRAGService extends RAGService {
         .where('application_id', applicationId)
         .orderBy('created_at', 'desc');
 
-      // Get application attachments
+      // Get application attachments with both direct content and extracted content
       const attachments = await this.db('application_attachments')
         .join('yp_files', 'application_attachments.file_id', 'yp_files.id')
+        .leftJoin('document_extracts', 'yp_files.id', 'document_extracts.file_id')
         .where('application_attachments.application_id', applicationId)
         .select(
           'yp_files.*',
           'application_attachments.document_type',
-          'application_attachments.metadata'
+          'application_attachments.metadata',
+          'application_attachments.content as direct_content', // Direct text content
+          'application_attachments.content_format',
+          'document_extracts.content_text as extracted_content', // Extracted from file
+          'document_extracts.word_count',
+          'document_extracts.page_count'
         );
 
-      // Get draft versions
+      // Get draft versions through application_content join
       const draftVersions = await this.db('application_content_versions')
-        .where('application_id', applicationId)
-        .orderBy('created_at', 'desc');
+        .join('application_content', 'application_content_versions.application_content_id', 'application_content.id')
+        .where('application_content.application_id', applicationId)
+        .select('application_content_versions.*')
+        .orderBy('application_content_versions.created_at', 'desc');
 
       // Calculate completion status
       const completionStatus = {

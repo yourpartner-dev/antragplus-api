@@ -634,6 +634,9 @@ CREATE TABLE grant_matches (
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	created_by uuid NULL,
+	matching_points _text DEFAULT '{}'::text[] NULL, -- Array of specific points explaining why this grant matches the NGO
+	missing_points _text DEFAULT '{}'::text[] NULL, -- Array of specific requirements or criteria that the NGO is missing for this grant
+	suggestions _text DEFAULT '{}'::text[] NULL, -- Array of actionable suggestions to improve the NGO's eligibility for this grant
 	CONSTRAINT grant_matches_ngo_id_grant_id_key UNIQUE (ngo_id, grant_id),
 	CONSTRAINT grant_matches_pkey PRIMARY KEY (id),
 	CONSTRAINT grant_matches_grant_id_fkey FOREIGN KEY (grant_id) REFERENCES grants(id) ON DELETE CASCADE,
@@ -641,9 +644,18 @@ CREATE TABLE grant_matches (
 );
 CREATE INDEX idx_grant_matches_expires ON public.grant_matches USING btree (expires_at);
 CREATE INDEX idx_grant_matches_grant_id ON public.grant_matches USING btree (grant_id);
+CREATE INDEX idx_grant_matches_matching_points ON public.grant_matches USING gin (matching_points);
+CREATE INDEX idx_grant_matches_missing_points ON public.grant_matches USING gin (missing_points);
 CREATE INDEX idx_grant_matches_ngo_id ON public.grant_matches USING btree (ngo_id);
 CREATE INDEX idx_grant_matches_score ON public.grant_matches USING btree (match_score DESC);
 CREATE INDEX idx_grant_matches_status ON public.grant_matches USING btree (match_status);
+CREATE INDEX idx_grant_matches_suggestions ON public.grant_matches USING gin (suggestions);
+
+-- Column comments
+
+COMMENT ON COLUMN public.grant_matches.matching_points IS 'Array of specific points explaining why this grant matches the NGO';
+COMMENT ON COLUMN public.grant_matches.missing_points IS 'Array of specific requirements or criteria that the NGO is missing for this grant';
+COMMENT ON COLUMN public.grant_matches.suggestions IS 'Array of actionable suggestions to improve the NGO''s eligibility for this grant';
 
 -- Table Triggers
 

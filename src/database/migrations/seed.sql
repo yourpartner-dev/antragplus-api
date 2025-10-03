@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS applications (
     translation_group_id UUID REFERENCES translation_groups(id),
     language VARCHAR(5) DEFAULT 'en-US', -- primary language for this record
     title VARCHAR(255),
-    status VARCHAR(50) DEFAULT 'draft', -- draft, submitted, in_review, approved, rejected, withdrawn
+    status VARCHAR(50) DEFAULT 'draft' CHECK (status IN ('draft', 'proposal', 'generated', 'sent for review', 'submitted', 'won', 'lost')), -- Application lifecycle status
     submission_date TIMESTAMP WITH TIME ZONE,
     decision_date TIMESTAMP WITH TIME ZONE,
     requested_amount DECIMAL(15,2),

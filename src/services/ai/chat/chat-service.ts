@@ -1,4 +1,4 @@
-import { streamText } from 'ai';
+import { stepCountIs, streamText } from 'ai';
 import { applicationCreationModel } from '../providers.js';
 import { useLogger } from '../../../helpers/logger/index.js';
 import { ItemsService } from '../../items.js';
@@ -57,8 +57,8 @@ export class ChatService extends ItemsService {
     try {
       // Generate initial title from first message
       const firstMessage = messages[0];
-      const title = firstMessage && typeof firstMessage.content === 'string' 
-        ? firstMessage.content.substring(0, 100) 
+      const title = firstMessage && typeof firstMessage.content === 'string'
+        ? firstMessage.content.substring(0, 100)
         : 'New Chat';
 
       // Check if we should reuse an existing chat based on context
@@ -110,7 +110,7 @@ export class ChatService extends ItemsService {
           });
         } catch (logError) {
           // Don't throw - logging should not break operations
-          logger.error(logError, 'Failed to log chat creation activity' );
+          logger.error(logError, 'Failed to log chat creation activity');
         }
       }
 
@@ -290,7 +290,7 @@ Raw Content: ${url.content.substring(0, 1500)}`;
           ngo_id: context.ngo_id,
           grant_id: context.grant_id,
           application_id: context.application_id!,
-          include_web_search: true,
+          include_web_search: false, // Disabled for speed - AI can use searchWeb() tool when needed
           prioritize_compliance: true
         }
       );
@@ -325,42 +325,133 @@ Raw Content: ${url.content.substring(0, 1500)}`;
 
       // Always use applicationCreationModel for grant application context
       const selectedModel = applicationCreationModel();
+
+      // Send initial thinking event
+      stream.write(`data: ${JSON.stringify({
+        type: 'thinking',
+        message: 'Analyzing your request and gathering context...',
+        phase: 'initializing'
+      })}\n\n`);
+
       const result = await streamText({
         model: selectedModel,
         messages: messagesWithContext,
         temperature: temperature || 0.7,
         tools,
         toolChoice: 'auto', // Let the model decide when to use tools
-        onFinish: async (result) => {
-          // Store assistant message
-          await this.addMessage(
-            chatId,
-            {
-              content: result.text,
-              role: 'assistant',
-              metadata: {
-                usage: result.usage,
-                finishReason: result.finishReason,
-                toolCalls: result.toolCalls,
-                toolResults: result.toolResults,
+        stopWhen: stepCountIs(5), // Ensure AI responds after tool calls, prevents silent tool-only responses
+        onStepFinish: async (step) => {
+          // Save each step as a separate message (multi-step responses broken into parts)
+          if (step.text && step.text.trim().length > 0) {
+            await this.addMessage(
+              chatId,
+              {
+                content: step.text,
+                role: 'assistant',
+                metadata: {
+                  usage: step.usage,
+                  finishReason: step.finishReason,
+                  toolCalls: step.toolCalls || [],
+                  toolResults: step.toolResults || [],
+                  multiStep: true, // Flag to indicate this is part of multi-step response
+                },
               },
-            },
-            this.accountability?.user || null
-          );
+              this.accountability?.user || null
+            );
+          }
         },
       });
 
-      // Stream to response
-      for await (const chunk of result.textStream) {
-        stream.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+      // Stream to response with enhanced events
+      try {
+        for await (const chunk of result.fullStream) {
+          // Handle different chunk types
+          if (chunk.type === 'text-delta') {
+            stream.write(`data: ${JSON.stringify({
+              type: 'content',
+              content: chunk.text
+            })}\n\n`);
+          } else if (chunk.type === 'tool-call') {
+            stream.write(`data: ${JSON.stringify({
+              type: 'tool_call',
+              tool: chunk.toolName,
+              args: chunk.input,
+              status: 'started',
+              toolCallId: chunk.toolCallId
+            })}\n\n`);
+          } else if (chunk.type === 'tool-result') {
+            stream.write(`data: ${JSON.stringify({
+              type: 'tool_result',
+              tool: chunk.toolName,
+              result: chunk.output,
+              status: 'completed',
+              toolCallId: chunk.toolCallId
+            })}\n\n`);
+
+            // If this was a document creation tool, send special event
+            if (chunk.toolName === 'createApplicationDocument' && (chunk.output as any)?.success) {
+              stream.write(`data: ${JSON.stringify({
+                type: 'document_created',
+                document: (chunk.output as any).document,
+                message: `Created document: ${(chunk.output as any).document?.title}`
+              })}\n\n`);
+            } else if (chunk.toolName === 'updateApplicationDocument' && (chunk.output as any)?.success) {
+              stream.write(`data: ${JSON.stringify({
+                type: 'document_updated',
+                document: (chunk.output as any).document,
+                message: `Updated document: ${(chunk.output as any).document?.title}`
+              })}\n\n`);
+            } else if (chunk.toolName === 'getApplicationProgress' && (chunk.output as any)?.success) {
+              stream.write(`data: ${JSON.stringify({
+                type: 'progress_update',
+                progress: (chunk.output as any).progress,
+                message: (chunk.output as any).message
+              })}\n\n`);
+            }
+          } else if (chunk.type === 'finish') {
+            // Final completion event
+            stream.write(`data: ${JSON.stringify({
+              type: 'complete',
+              finishReason: chunk.finishReason,
+              usage: chunk.totalUsage
+            })}\n\n`);
+          } else if (chunk.type === 'error') {
+            // Handle streaming errors
+            stream.write(`data: ${JSON.stringify({
+              type: 'error',
+              error: chunk.error,
+              message: chunk.error instanceof Error ? chunk.error.message : 'An error occurred during streaming'
+            })}\n\n`);
+          }
+        }
+
+        // Send done event
+        stream.write(`data: ${JSON.stringify({ type: 'done', data: '[DONE]' })}\n\n`);
+        stream.end();
+
+      } catch (streamError: any) {
+        // Stream error - send error SSE event before ending
+        logger.error(streamError, 'Error during SSE stream:');
+
+        // Check if it's a rate limit error
+        const isRateLimitError = streamError.message?.includes('rate limit') || streamError.statusCode === 429;
+        const errorMessage = isRateLimitError
+          ? 'Rate limit exceeded. Please wait a moment and try again.'
+          : streamError.message || 'An unexpected error occurred';
+
+        stream.write(`data: ${JSON.stringify({
+          type: 'error',
+          error: errorMessage,
+          isRateLimitError,
+          retryAfter: streamError.responseHeaders?.['retry-after']
+        })}\n\n`);
+
+        stream.write(`data: ${JSON.stringify({ type: 'done', data: '[ERROR]' })}\n\n`);
+        stream.end();
       }
 
-      // Send done event
-      stream.write(`event: done\n`);
-      stream.write(`data: [DONE]\n\n`);
-      stream.end();
-
     } catch (error) {
+      // Error before streaming started
       logger.error(error, 'Error streaming chat response:');
       throw error;
     }
@@ -370,96 +461,81 @@ Raw Content: ${url.content.substring(0, 1500)}`;
    * Build system message specifically for application context (NEW - replaces buildSystemMessage)
    */
   private buildApplicationSystemMessage(ragContext: any): string {
-    let systemMessage = `You are an AI assistant specializing in grant application creation and editing for AntragPlus.
+    const hasExistingDocuments = ragContext.application_status?.existing_content?.length > 0;
 
-CONTEXT: You are working within an application workspace where you help create, edit, and manage grant application documents.
+    let systemMessage = `You are an AI assistant for grant application creation in AntragPlus.
 
-Your capabilities:
-- Create new application documents (proposals, budgets, timelines, cover letters, etc.)
-- Edit existing application documents with precision
-- Delete documents when requested
-- Regenerate content based on updated context
+COMMUNICATION STYLE:
+- Be direct and concise - keep responses under 2-3 sentences unless creating documents
+- After using ANY tool, always respond with a brief summary of what you did or found
+- Use a conversational, helpful tone
+
+YOUR ROLE:
+- Help create, edit, and manage grant application documents
 - Provide grant-specific guidance using exact requirements
-- Ensure compliance with all grant guidelines
+- Ensure all content matches grant requirements and NGO capabilities
 
-IMPORTANT: You are working with a specific grant and NGO combination. All documents you create must be tailored to:
-- The specific grant requirements and terminology
-- The NGO's profile, capabilities, and track record
-- The application's current state and existing documents
+${!hasExistingDocuments ? `
+NEW APPLICATION: Ask the user about their project idea for this grant.
+` : ''}
 
 `;
 
-    // Add grant context
+    // Add grant context (essentials only - AI can use tools for details)
     if (ragContext.grant_details?.info) {
+      const reqCount = ragContext.grant_details.requirements_matrix?.length || 0;
       systemMessage += `CURRENT GRANT:
-Name: ${ragContext.grant_details.info.name}
-Provider: ${ragContext.grant_details.info.provider}
-Deadline: ${ragContext.grant_details.info.deadline}
-Amount: €${ragContext.grant_details.info.amount_min} - €${ragContext.grant_details.info.amount_max}
-Language: ${ragContext.grant_details.language_requirements}
-
-GRANT REQUIREMENTS:
-${ragContext.grant_details.requirements_matrix.join('\n')}
-
-SUBMISSION GUIDELINES:
-${ragContext.grant_details.submission_guidelines.join('\n')}
+- Name: ${ragContext.grant_details.info.name}
+- Provider: ${ragContext.grant_details.info.provider}
+- Deadline: ${ragContext.grant_details.info.deadline}
+- Amount: €${ragContext.grant_details.info.amount_min} - €${ragContext.grant_details.info.amount_max}
+- Language: ${ragContext.grant_details.language_requirements}
+- Requirements: ${reqCount} documented (use getCurrentGrantInfo() tool for full list)
 
 `;
     }
 
-    // Add NGO context
+    // Add NGO context (essentials only - AI can use tools for details)
     if (ragContext.ngo_details?.info) {
       systemMessage += `CURRENT NGO:
-Organization: ${ragContext.ngo_details.info.organization_name}
-Field of Work: ${ragContext.ngo_details.info.field_of_work}
-Company Size: ${ragContext.ngo_details.info.company_size}
-Location: ${ragContext.ngo_details.info.location}
-
-NGO CAPABILITIES:
-${ragContext.ngo_details.capabilities.join('\n')}
-
-TRACK RECORD:
-- Total Applications: ${ragContext.ngo_details.financial_track_record.total_applications}
-- Success Rate: ${ragContext.ngo_details.financial_track_record.success_rate}%
-- Total Funding: €${ragContext.ngo_details.financial_track_record.total_funding_awarded}
+- Organization: ${ragContext.ngo_details.info.organization_name}
+- Field: ${ragContext.ngo_details.info.field_of_work}
+- Location: ${ragContext.ngo_details.info.location}
+- Past applications: ${ragContext.ngo_details.past_applications?.length || 0} (use getCurrentNGOInfo() for details)
 
 `;
     }
 
-    // Add current application documents context
+    // Add current application documents (keep full list - this is relevant)
     if (ragContext.application_status?.existing_content?.length > 0) {
-      systemMessage += `CURRENT APPLICATION DOCUMENTS:
+      systemMessage += `EXISTING DOCUMENTS (${ragContext.application_status.existing_content.length}):
 ${ragContext.application_status.existing_content.map((doc: any) =>
-  `- ${doc.title} (${doc.kind}) - ${doc.updated_at}`
-).join('\n')}
+        `- ${doc.title} (${doc.kind})`
+      ).join('\n')}
 
 `;
     }
 
-    // Add compliance requirements
-    if (ragContext.compliance_matrix?.required_documents?.length > 0) {
-      systemMessage += `REQUIRED DOCUMENTS:
-${ragContext.compliance_matrix.required_documents.join('\n')}
+    // Add uploaded attachments (keep - important context)
+    if (ragContext.application_status?.attachments?.length > 0) {
+      systemMessage += `UPLOADED ATTACHMENTS (${ragContext.application_status.attachments.length}):
+${ragContext.application_status.attachments.map((att: any) => {
+        const content = att.extracted_content || att.direct_content;
+        const hasContent = content && content.length > 100;
+        return `- ${att.filename_download} ${hasContent ? '(content available)' : ''}`;
+      }).join('\n')}
+Note: You can access attachment content when creating documents.
 
 `;
     }
 
-    // Add historical context
-    if (ragContext.historical_examples?.best_practices?.length > 0) {
-      systemMessage += `BEST PRACTICES:
-${ragContext.historical_examples.best_practices.join('\n')}
+    systemMessage += `TOOLS AVAILABLE:
+- createApplicationDocument / updateApplicationDocument / deleteApplicationDocument
+- getCurrentGrantInfo() - full grant requirements and guidelines
+- getCurrentNGOInfo() - NGO capabilities and track record
+- searchWeb() - search for best practices when needed
 
-`;
-    }
-
-    systemMessage += `When users request document operations:
-- Use createApplicationDocument to create new documents
-- Use updateApplicationDocument to edit existing documents
-- Use deleteApplicationDocument to remove documents
-- Always specify the correct document kind (proposal, budget, timeline, cover_letter, etc.)
-- Include the current application_id, ngo_id, and grant_id in your operations
-
-Remember: Every operation should be informed by the specific grant requirements and NGO capabilities listed above.`;
+Use tools proactively when you need detailed information.`;
 
     return systemMessage;
   }

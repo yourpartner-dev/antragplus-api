@@ -78,18 +78,18 @@ export class RAGService {
           ])
         );
 
-      // Apply filters
+      // Apply filters using proper JSONB syntax
       if (filter.ngo_id) {
-        searchQuery = searchQuery.where('metadata->ngo_id', filter.ngo_id);
+        searchQuery = searchQuery.whereRaw("metadata->>'ngo_id' = ?", [filter.ngo_id]);
       }
       if (filter.grant_id) {
-        searchQuery = searchQuery.where('metadata->grant_id', filter.grant_id);
+        searchQuery = searchQuery.whereRaw("metadata->>'grant_id' = ?", [filter.grant_id]);
       }
       if (filter.application_id) {
-        searchQuery = searchQuery.where('metadata->application_id', filter.application_id);
+        searchQuery = searchQuery.whereRaw("metadata->>'application_id' = ?", [filter.application_id]);
       }
       if (filter.language) {
-        searchQuery = searchQuery.where('metadata->language', filter.language);
+        searchQuery = searchQuery.whereRaw("metadata->>'language' = ?", [filter.language]);
       }
       if (filter.source_tables?.length) {
         searchQuery = searchQuery.whereIn('source_table', filter.source_tables);
