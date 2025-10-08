@@ -10,7 +10,8 @@
       "Read(//Users/omidsajedi/Documents/Workspace.NoSynch/pima_group/pima_one/api/**)",
       "WebFetch(domain:docs.searxng.org)",
       "Read(//Users/omidsajedi/Documents/Workspace.NoSynch/antragplus/**)",
-      "Read(//Users/omidsajedi/Desktop/antragplus/grant 1/**)"
+      "Read(//Users/omidsajedi/Desktop/antragplus/grant 1/**)",
+      "Read(//Users/omidsajedi/Desktop/antragplus/grant 2/**)"
     ],
     "deny": [],
     "ask": []

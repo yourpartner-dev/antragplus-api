@@ -35,6 +35,7 @@ export interface StreamChatOptions {
   model?: string; // Optional - determined by context
   temperature?: number;
   stream: Response;
+  ephemeralContext?: any; // Ephemeral data not stored in database
 }
 
 export class ChatService extends ItemsService {
@@ -242,7 +243,7 @@ export class ChatService extends ItemsService {
    * Stream chat response using Vercel AI SDK
    */
   async streamChatResponse(options: StreamChatOptions) {
-    const { chatId, messages, context, temperature, stream } = options;
+    const { chatId, messages, context, temperature, stream, ephemeralContext } = options;
 
     try {
       // Build RAG context based on the latest message
@@ -295,8 +296,20 @@ Raw Content: ${url.content.substring(0, 1500)}`;
         }
       );
 
+      // LOG: Context summary for this chat request
+      logger.info('[CHAT STREAM] Starting with context:', {
+        chat_id: chatId,
+        application_id: context.application_id,
+        grant_id: context.grant_id,
+        ngo_id: context.ngo_id,
+        existing_documents: ragContext.application_status?.existing_content?.length || 0,
+        grant_documents: ragContext.grant_details?.documents?.length || 0,
+        requirements_count: ragContext.grant_details?.requirements_matrix?.length || 0,
+        user_message_length: latestMessage.content.length
+      });
+
       // Build system message for application context
-      const systemMessage = this.buildApplicationSystemMessage(ragContext);
+      const systemMessage = this.buildApplicationSystemMessage(ragContext, ephemeralContext);
 
       // Add context as the first message
       const messagesWithContext: ModelMessage[] = [
@@ -339,7 +352,7 @@ Raw Content: ${url.content.substring(0, 1500)}`;
         temperature: temperature || 0.7,
         tools,
         toolChoice: 'auto', // Let the model decide when to use tools
-        stopWhen: stepCountIs(5), // Ensure AI responds after tool calls, prevents silent tool-only responses
+        stopWhen: stepCountIs(50), // Allow up to 50 steps for complex multi-tool operations
         onStepFinish: async (step) => {
           // Save each step as a separate message (multi-step responses broken into parts)
           if (step.text && step.text.trim().length > 0) {
@@ -366,46 +379,198 @@ Raw Content: ${url.content.substring(0, 1500)}`;
       try {
         for await (const chunk of result.fullStream) {
           // Handle different chunk types
-          if (chunk.type === 'text-delta') {
+          // Support both property naming conventions (textDelta/text for compatibility)
+          if (chunk.type === 'tool-input-start') {
+            // Tool input is starting - this happens BEFORE tool execution
+            // Perfect time to show loading indicator!
+            const toolName = (chunk as any).toolName;
+
+            if (toolName === 'createApplicationDocument') {
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: 'Creating document...',
+                phase: 'creating_document'
+              })}\n\n`);
+            } else if (toolName === 'updateApplicationDocument') {
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: 'Updating document...',
+                phase: 'updating_document'
+              })}\n\n`);
+            } else if (toolName === 'deleteApplicationDocument') {
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: 'Deleting document...',
+                phase: 'deleting_document'
+              })}\n\n`);
+            } else if (toolName === 'listApplicationDocuments') {
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: 'Loading documents...',
+                phase: 'loading_documents'
+              })}\n\n`);
+            } else if (toolName === 'searchWeb') {
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: 'Searching the web...',
+                phase: 'searching_web'
+              })}\n\n`);
+            } else if (toolName === 'getCurrentGrantInfo') {
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: 'Fetching grant requirements...',
+                phase: 'fetching_grant'
+              })}\n\n`);
+            } else if (toolName === 'getCurrentNGOInfo') {
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: 'Loading organization details...',
+                phase: 'fetching_ngo'
+              })}\n\n`);
+            } else {
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: `Executing: ${toolName}...`,
+                phase: 'executing_tool'
+              })}\n\n`);
+            }
+          } else if (chunk.type === 'text-delta') {
+            const textContent = (chunk as any).textDelta || (chunk as any).text || '';
             stream.write(`data: ${JSON.stringify({
               type: 'content',
-              content: chunk.text
+              content: textContent
             })}\n\n`);
           } else if (chunk.type === 'tool-call') {
+            // Tool call with complete arguments (happens AFTER tool-input chunks)
+            const toolArgs = (chunk as any).args || (chunk as any).input;
+
+            // LOG 6: Stream - tool called with args
+            if (chunk.toolName === 'updateApplicationDocument') {
+              logger.info({
+                tool: chunk.toolName,
+                args_keys: Object.keys(toolArgs || {}),
+                document_id: toolArgs?.document_id,
+                document_title: toolArgs?.document_title,
+                content_length: toolArgs?.content?.length,
+                toolCallId: chunk.toolCallId
+              },'[STREAM] updateApplicationDocument tool called:');
+            }
+
+            // Update the thinking message with the actual document title if available
+            if (chunk.toolName === 'createApplicationDocument' && toolArgs?.title) {
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: `Creating: ${toolArgs.title}`,
+                phase: 'creating_document'
+              })}\n\n`);
+            } else if (chunk.toolName === 'updateApplicationDocument' && toolArgs?.title) {
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: `Updating: ${toolArgs.title}`,
+                phase: 'updating_document'
+              })}\n\n`);
+            }
+
+            // Send the tool call event with complete arguments
             stream.write(`data: ${JSON.stringify({
               type: 'tool_call',
               tool: chunk.toolName,
-              args: chunk.input,
+              args: toolArgs,
               status: 'started',
               toolCallId: chunk.toolCallId
             })}\n\n`);
           } else if (chunk.type === 'tool-result') {
+            // Support both result and output property names
+            const toolResult = (chunk as any).result || (chunk as any).output;
+            const toolArgs = (chunk as any).args || (chunk as any).input;
+
             stream.write(`data: ${JSON.stringify({
               type: 'tool_result',
               tool: chunk.toolName,
-              result: chunk.output,
+              result: toolResult,
+              args: toolArgs,
               status: 'completed',
               toolCallId: chunk.toolCallId
             })}\n\n`);
 
             // If this was a document creation tool, send special event
-            if (chunk.toolName === 'createApplicationDocument' && (chunk.output as any)?.success) {
+            if (chunk.toolName === 'createApplicationDocument' && toolResult?.success) {
+              const doc = toolResult.document;
               stream.write(`data: ${JSON.stringify({
                 type: 'document_created',
-                document: (chunk.output as any).document,
-                message: `Created document: ${(chunk.output as any).document?.title}`
+                document: doc,
+                message: `✓ Created: ${doc?.title || 'Document'}`
               })}\n\n`);
-            } else if (chunk.toolName === 'updateApplicationDocument' && (chunk.output as any)?.success) {
+
+              // Clear thinking state after document creation
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: null,
+                phase: 'complete'
+              })}\n\n`);
+            } else if (chunk.toolName === 'updateApplicationDocument' && toolResult?.success) {
+              const doc = toolResult.document;
+
+              // LOG 7: Stream - document update result
+              logger.info({
+                success: toolResult?.success,
+                document_id: doc?.id,
+                document_title: doc?.title,
+                content_length: doc?.content?.length,
+                version_number: toolResult?.version_number,
+                toolCallId: chunk.toolCallId
+              },'[STREAM] updateApplicationDocument result:');
+
               stream.write(`data: ${JSON.stringify({
                 type: 'document_updated',
-                document: (chunk.output as any).document,
-                message: `Updated document: ${(chunk.output as any).document?.title}`
+                document: doc,
+                message: `✓ Updated: ${doc?.title || 'Document'}`
               })}\n\n`);
-            } else if (chunk.toolName === 'getApplicationProgress' && (chunk.output as any)?.success) {
+
+              // Clear thinking state
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: null,
+                phase: 'complete'
+              })}\n\n`);
+            } else if (chunk.toolName === 'deleteApplicationDocument' && toolResult?.success) {
+              stream.write(`data: ${JSON.stringify({
+                type: 'document_deleted',
+                message: toolResult.message || '✓ Document deleted'
+              })}\n\n`);
+
+              // Clear thinking state
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: null,
+                phase: 'complete'
+              })}\n\n`);
+            } else if (chunk.toolName === 'listApplicationDocuments' && toolResult?.success) {
+              stream.write(`data: ${JSON.stringify({
+                type: 'documents_listed',
+                documents: toolResult.documents,
+                count: toolResult.count,
+                message: toolResult.message
+              })}\n\n`);
+
+              // Clear thinking state
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: null,
+                phase: 'complete'
+              })}\n\n`);
+            } else if (chunk.toolName === 'getApplicationProgress' && toolResult?.success) {
               stream.write(`data: ${JSON.stringify({
                 type: 'progress_update',
-                progress: (chunk.output as any).progress,
-                message: (chunk.output as any).message
+                progress: toolResult.progress,
+                message: toolResult.message
+              })}\n\n`);
+            } else {
+              // Clear thinking state for any other tool completion
+              stream.write(`data: ${JSON.stringify({
+                type: 'thinking',
+                message: null,
+                phase: 'complete'
               })}\n\n`);
             }
           } else if (chunk.type === 'finish') {
@@ -413,7 +578,7 @@ Raw Content: ${url.content.substring(0, 1500)}`;
             stream.write(`data: ${JSON.stringify({
               type: 'complete',
               finishReason: chunk.finishReason,
-              usage: chunk.totalUsage
+              usage: chunk.totalUsage || (chunk as any).usage
             })}\n\n`);
           } else if (chunk.type === 'error') {
             // Handle streaming errors
@@ -422,6 +587,31 @@ Raw Content: ${url.content.substring(0, 1500)}`;
               error: chunk.error,
               message: chunk.error instanceof Error ? chunk.error.message : 'An error occurred during streaming'
             })}\n\n`);
+          } else if (chunk.type === 'tool-error') {
+            // Tool execution errors
+            stream.write(`data: ${JSON.stringify({
+              type: 'tool_error',
+              tool: chunk.toolName,
+              error: chunk.error,
+              message: `Failed: ${chunk.error instanceof Error ? chunk.error.message : 'Unknown error'}`
+            })}\n\n`);
+          } else if (
+            chunk.type === 'start' ||
+            chunk.type === 'start-step' ||
+            chunk.type === 'finish-step' ||
+            chunk.type === 'text-start' ||
+            chunk.type === 'text-end' ||
+            chunk.type === 'tool-input-delta' ||
+            chunk.type === 'tool-input-end'
+          ) {
+            // Internal SDK events - no action needed, handled by other chunk types
+            // start: Stream initialization
+            // start-step/finish-step: Multi-step reasoning boundaries
+            // text-start/text-end: Text generation boundaries
+            // tool-input-delta/tool-input-end: Tool argument streaming (handled in tool-input-start and tool-call)
+          } else {
+            // Log truly unhandled chunk types for debugging
+            logger.warn(`Unhandled chunk type: ${chunk.type}`, { chunk });
           }
         }
 
@@ -460,14 +650,15 @@ Raw Content: ${url.content.substring(0, 1500)}`;
   /**
    * Build system message specifically for application context (NEW - replaces buildSystemMessage)
    */
-  private buildApplicationSystemMessage(ragContext: any): string {
+  private buildApplicationSystemMessage(ragContext: any, ephemeralContext?: any): string {
     const hasExistingDocuments = ragContext.application_status?.existing_content?.length > 0;
 
     let systemMessage = `You are an AI assistant for grant application creation in AntragPlus.
 
 COMMUNICATION STYLE:
 - Be direct and concise - keep responses under 2-3 sentences unless creating documents
-- After using ANY tool, always respond with a brief summary of what you did or found
+- CRITICAL: After using ANY tool, you MUST respond with a brief summary of what you did or found
+- NEVER use tools silently - always tell the user what you're doing and what you found
 - Use a conversational, helpful tone
 
 YOUR ROLE:
@@ -522,18 +713,42 @@ ${ragContext.application_status.existing_content.map((doc: any) =>
 ${ragContext.application_status.attachments.map((att: any) => {
         const content = att.extracted_content || att.direct_content;
         const hasContent = content && content.length > 100;
-        return `- ${att.filename_download} ${hasContent ? '(content available)' : ''}`;
+        return `- ${att.filename_download} ${hasContent ? '(content available)' : '(processing...)'}`;
       }).join('\n')}
-Note: You can access attachment content when creating documents.
+
+Use getApplicationAttachments() tool to list or read attachment content.
+When user references "my file", "previous application", "annual report", etc., use this tool.
+
+`;
+    }
+
+    // Add ephemeral context (current document user is viewing/editing)
+    if (ephemeralContext?.current_document) {
+      const doc = ephemeralContext.current_document;
+      systemMessage += `
+CURRENT DOCUMENT (user is viewing):
+- Title: "${doc.title}"
+- Type: ${doc.kind || 'text'}
+- ID: ${doc.id}
+
+When user says "this", "here", "current document", they mean ID: ${doc.id}
 
 `;
     }
 
     systemMessage += `TOOLS AVAILABLE:
-- createApplicationDocument / updateApplicationDocument / deleteApplicationDocument
-- getCurrentGrantInfo() - full grant requirements and guidelines
-- getCurrentNGOInfo() - NGO capabilities and track record
-- searchWeb() - search for best practices when needed
+- createApplicationDocument / updateApplicationDocument / deleteApplicationDocument / listApplicationDocuments
+- getApplicationAttachments() - List/read user-uploaded files (PDFs, previous applications, supporting docs)
+- getCurrentGrantInfo() - ALWAYS CHECK THIS FIRST for grant requirements and guidelines
+- getCurrentNGOInfo() - ALWAYS CHECK THIS FIRST for NGO capabilities and track record
+- searchWeb() - ONLY use if internal info is missing. ALWAYS inform user "I'm searching the web for additional context..." before using
+
+IMPORTANT WORKFLOW:
+1. Check getCurrentGrantInfo() and getCurrentNGOInfo() FIRST
+2. Use getApplicationAttachments() when user references their uploaded files or attachments
+3. Only use searchWeb() if critical information is missing from internal database
+4. If using searchWeb(), ALWAYS tell the user first: "Let me search the web for additional information..."
+5. If web search fails/times out, continue with internal data and inform user
 
 Use tools proactively when you need detailed information.`;
 

@@ -321,8 +321,8 @@ export class EnhancedRAGService extends RAGService {
           'grant_documents.metadata'
         );
 
-      // Extract requirements from document content
-      const requirements_matrix = this.extractRequirementsFromDocuments(documents);
+      // Extract requirements from document content (simple extraction for context building)
+      const requirements_matrix = this.extractRequirementsFromDocumentsSimple(documents);
       const submission_guidelines = this.extractSubmissionGuidelines(documents);
       const formatting_requirements = this.extractFormattingRequirements(documents);
 
@@ -573,9 +573,10 @@ export class EnhancedRAGService extends RAGService {
   }
 
   /**
-   * Extract requirements from grant documents
+   * Extract requirements from grant documents - SIMPLE VERSION for context building
+   * This is called on every message, so must be fast (no AI calls)
    */
-  private extractRequirementsFromDocuments(documents: any[]): string[] {
+  private extractRequirementsFromDocumentsSimple(documents: any[]): string[] {
     const requirements: string[] = [];
 
     documents.forEach(doc => {
@@ -598,6 +599,70 @@ export class EnhancedRAGService extends RAGService {
     });
 
     return requirements;
+  }
+
+  /**
+   * Extract requirements from grant documents using AI - ONLY for tool calls
+   * Uses Gemini model for intelligent requirement extraction
+   * WARNING: This is expensive and slow - only call when explicitly needed
+   */
+  private async extractRequirementsFromDocumentsWithAI(documents: any[]): Promise<string[]> {
+    const { generateObject } = await import('ai');
+    const { z } = await import('zod');
+    const { getGrantExtractionModel } = await import('./providers.js');
+
+    const requirements: string[] = [];
+
+    // Filter documents with actual content
+    const docsWithContent = documents.filter(doc => doc.content_text);
+
+    if (docsWithContent.length === 0) {
+      return requirements;
+    }
+
+    try {
+      // Combine all document content for AI analysis
+      const combinedContent = docsWithContent
+        .map(doc => `--- Document: ${doc.filename_download || 'Unknown'} ---\n${doc.content_text}`)
+        .join('\n\n');
+
+      // Use AI to extract structured requirements
+      const result = await generateObject({
+        model: getGrantExtractionModel(),
+        schema: z.object({
+          requirements: z.array(z.string()).describe('List of specific, actionable requirements extracted from grant documents. Include eligibility criteria, required documents, submission requirements, formatting rules, deadlines, budget requirements, and any other mandatory conditions.'),
+        }),
+        prompt: `You are a grant requirements extraction specialist. Analyze the following grant documents and extract ALL specific requirements that applicants must meet or documents they must submit.
+
+FOCUS ON:
+- Eligibility criteria (who can apply, legal form requirements, geographic restrictions)
+- Required documents (what must be submitted)
+- Submission requirements (format, language, page limits, file types)
+- Budget and financial requirements (co-financing, eligible costs, funding limits)
+- Timeline and deadline requirements
+- Formatting and presentation requirements
+- Technical requirements (platform, signatures, certifications)
+- Reporting and compliance obligations
+
+EXTRACTION RULES:
+- Be specific and actionable (e.g., "Must submit proof of non-profit status" not "eligibility requirements exist")
+- Include numerical limits where specified (e.g., "Maximum 20 pages for project description")
+- Preserve requirement context and source when relevant
+- Translate German requirements to English if needed
+- Omit vague statements, focus on concrete requirements
+
+DOCUMENT CONTENT:
+${combinedContent.substring(0, 100000)}`, // Limit to 100k chars for token management
+      });
+
+      return result.object.requirements;
+    } catch (error) {
+      logger.error(error, 'Error extracting requirements with AI');
+      // Fallback: return simple metadata
+      return docsWithContent.map(doc =>
+        `Requirements documented in ${doc.filename_download || 'uploaded document'}`
+      );
+    }
   }
 
   /**
@@ -1052,6 +1117,42 @@ export class EnhancedRAGService extends RAGService {
     }
 
     return sections.join('\n\n---\n\n');
+  }
+
+  /**
+   * Public method to get complete grant details including documents
+   * Used by AI tools to access comprehensive grant information
+   * Uses simple extraction (no AI) - for context building speed
+   */
+  async getGrantDetailsWithDocuments(grantId: string) {
+    return this.getCompleteGrantDetails(grantId);
+  }
+
+  /**
+   * Public method to get grant requirements using AI extraction
+   * ONLY call this when explicitly needed (e.g., in getCurrentGrantInfo tool)
+   * WARNING: This is expensive and slow - uses Gemini API
+   */
+  async getGrantRequirementsWithAI(grantId: string): Promise<string[]> {
+    try {
+      // Get grant documents
+      const documents = await this.db('grant_documents')
+        .join('yp_files', 'grant_documents.file_id', 'yp_files.id')
+        .leftJoin('document_extracts', 'yp_files.id', 'document_extracts.file_id')
+        .where('grant_documents.grant_id', grantId)
+        .select(
+          'yp_files.*',
+          'document_extracts.content_text',
+          'grant_documents.document_type',
+          'grant_documents.metadata'
+        );
+
+      // Use AI to extract requirements
+      return await this.extractRequirementsFromDocumentsWithAI(documents);
+    } catch (error) {
+      logger.error(error, 'Error extracting grant requirements with AI');
+      return [];
+    }
   }
 }
 

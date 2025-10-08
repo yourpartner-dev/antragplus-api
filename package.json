@@ -61,6 +61,7 @@
 		"@tus/utils": "0.2.0",
 		"@types/cookie": "0.6.0",
 		"@vercel/blob": "^1.1.1",
+		"@yp/api": "link:",
 		"ai": "^5.0.34",
 		"argon2": "0.40.3",
 		"async": "3.2.5",

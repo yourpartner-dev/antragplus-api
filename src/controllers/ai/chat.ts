@@ -37,7 +37,7 @@ router.post(
       throw new ForbiddenError();
     }
 
-    const { messages, context, temperature } = value;
+    const { messages, context, temperature, ephemeral_context } = value;
     const accountability = req.accountability;
     const userId = accountability?.user;
     const schema = req.schema;
@@ -79,6 +79,7 @@ router.post(
       context,
       temperature: temperature || 0.7,
       stream: res,
+      ephemeralContext: ephemeral_context,
     });
 
     // End the response after streaming is complete

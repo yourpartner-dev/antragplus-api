@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS application_content (
     title TEXT NOT NULL,
     content TEXT,
     content_format VARCHAR(20) DEFAULT 'text', -- text, markdown, json, html
+    content_blocks JSONB DEFAULT '[]', -- Structured content blocks for Vercel AI SDK
     kind VARCHAR(20) DEFAULT 'text', -- text, code, image, sheet (matching Vercel schema)
     ngo_id UUID REFERENCES ngos(id) ON DELETE CASCADE,
     application_id UUID REFERENCES applications(id) ON DELETE CASCADE,
@@ -171,6 +172,7 @@ CREATE TABLE IF NOT EXISTS application_content_versions (
     application_content_id UUID NOT NULL REFERENCES application_content(id) ON DELETE CASCADE,
     version_number INTEGER NOT NULL,
     content TEXT,
+    content_blocks JSONB DEFAULT '[]', -- Structured content blocks snapshot
     changes JSONB DEFAULT '{}', -- Track what changed
     file_url VARCHAR(500),
     file_size BIGINT,

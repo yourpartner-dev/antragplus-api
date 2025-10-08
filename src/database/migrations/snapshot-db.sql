@@ -485,7 +485,7 @@ CREATE TABLE applications (
 	translation_group_id uuid NULL,
 	"language" varchar(5) DEFAULT 'en-US'::character varying NULL,
 	title varchar(255) NULL,
-	status varchar(50) DEFAULT 'draft'::character varying NULL,
+	status varchar(50) DEFAULT 'draft'::character varying NULL, -- Application lifecycle status: draft, proposal, generated, sent for review, submitted, won, lost
 	submission_date timestamptz NULL,
 	decision_date timestamptz NULL,
 	requested_amount numeric(15, 2) NULL,
@@ -505,6 +505,7 @@ CREATE TABLE applications (
 	updated_by uuid NULL,
 	CONSTRAINT applications_ngo_id_grant_id_key UNIQUE (ngo_id, grant_id),
 	CONSTRAINT applications_pkey PRIMARY KEY (id),
+	CONSTRAINT applications_status_check CHECK (((status)::text = ANY ((ARRAY['draft'::character varying, 'proposal'::character varying, 'generated'::character varying, 'sent for review'::character varying, 'submitted'::character varying, 'won'::character varying, 'lost'::character varying])::text[]))),
 	CONSTRAINT applications_grant_id_fkey FOREIGN KEY (grant_id) REFERENCES grants(id) ON DELETE CASCADE,
 	CONSTRAINT applications_ngo_id_fkey FOREIGN KEY (ngo_id) REFERENCES ngos(id) ON DELETE CASCADE,
 	CONSTRAINT applications_translation_group_id_fkey FOREIGN KEY (translation_group_id) REFERENCES translation_groups(id)
@@ -517,6 +518,10 @@ CREATE INDEX idx_applications_search ON public.applications USING gin (to_tsvect
 CREATE INDEX idx_applications_status ON public.applications USING btree (status);
 CREATE INDEX idx_applications_submission_date ON public.applications USING btree (submission_date);
 CREATE INDEX idx_applications_translation_group ON public.applications USING btree (translation_group_id);
+
+-- Column comments
+
+COMMENT ON COLUMN public.applications.status IS 'Application lifecycle status: draft, proposal, generated, sent for review, submitted, won, lost';
 
 -- Table Triggers
 

@@ -23,6 +23,14 @@ export const createChatSchema = Joi.object({
       .valid('application_edit', 'ngo_onboarding', 'grant_discovery', 'document_generation')
       .optional(),
   }).optional(),
+  temperature: Joi.number().min(0).max(2).optional(),
+  ephemeral_context: Joi.object({
+    current_document: Joi.object({
+      id: Joi.string().uuid().required(),
+      title: Joi.string().required(),
+      kind: Joi.string().optional()
+    }).optional()
+  }).optional(),
 });
 
 // Schema for updating a chat

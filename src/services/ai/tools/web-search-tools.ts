@@ -31,11 +31,11 @@ export { tavilyClient };
 export function getWebSearchTools() {
   return {
     searchWeb: tool({
-      description: 'Search the web for current, up-to-date information on any topic. Use this when you need information that might not be in the internal database or when you need the latest information about grants, funding, best practices, news, etc.',
+      description: 'Search the web for ADDITIONAL information when internal database information is insufficient. IMPORTANT: Only use this tool if: 1) You have already checked internal grant documents/NGO data and found it incomplete, 2) You inform the user you are searching the web for additional context. This should be a LAST RESORT after checking internal sources.',
       inputSchema: z.object({
         query: z.string().describe('The search query - be specific and detailed for best results'),
-        search_depth: z.enum(['basic', 'advanced']).default('advanced').describe('Use advanced for comprehensive research'),
-        max_results: z.number().min(1).max(10).default(8).describe('Number of results to retrieve')
+        search_depth: z.enum(['basic', 'advanced']).default('basic').describe('Use basic for most queries, advanced only for comprehensive research'),
+        max_results: z.number().min(1).max(10).default(5).describe('Number of results to retrieve (lower is faster)')
       }),
       execute: async ({ query, search_depth, max_results }) => {
         if (!TAVILY_API_KEY) {
@@ -43,7 +43,8 @@ export function getWebSearchTools() {
           return {
             success: false,
             message: 'Web search is currently not available. Please configure TAVILY_API_KEY.',
-            results: []
+            results: [],
+            user_message: 'Web search is not available at the moment. I will use only internal database information.'
           };
         }
 
@@ -56,7 +57,7 @@ export function getWebSearchTools() {
             max_results,
             include_answer: true,
             include_raw_content: false,
-          }, 30000) as any; // 30 second timeout
+          }, 15000) as any; // Reduced to 15 second timeout
 
           // Process results
           const results = searchResult.results?.map((result: any) => ({
@@ -93,7 +94,8 @@ export function getWebSearchTools() {
               success: false,
               message: 'Web search timed out. The search service is taking too long to respond.',
               results: [],
-              error: 'Timeout error'
+              error: 'Timeout error',
+              user_message: 'The web search took too long and timed out. I will continue using the information available in our database.'
             };
           }
 
@@ -101,7 +103,8 @@ export function getWebSearchTools() {
             success: false,
             message: 'Web search temporarily unavailable. Please try again later.',
             results: [],
-            error: error.message
+            error: error.message,
+            user_message: 'Web search is temporarily unavailable. I will continue using the information available in our database.'
           };
         }
       },
