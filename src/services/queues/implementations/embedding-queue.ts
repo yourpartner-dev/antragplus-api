@@ -142,41 +142,79 @@ export class EmbeddingQueue extends BaseQueue {
       return;
     }
 
-    // Fetch content from source
-    const content = await this.fetchSourceContent(
-      payload.source_table,
-      payload.source_id,
-      payload.fields_to_embed,
-      payload.schema
-    );
+    try {
+      // Fetch content from source
+      const content = await this.fetchSourceContent(
+        payload.source_table,
+        payload.source_id,
+        payload.fields_to_embed,
+        payload.schema
+      );
 
-    if (!content || Object.keys(content).length === 0) {
-      this.logger.warn(`No content found for ${payload.source_table}:${payload.source_id}`);
-      return;
-    }
+      if (!content || Object.keys(content).length === 0) {
+        this.logger.warn(`No content found for ${payload.source_table}:${payload.source_id} - skipping`);
+        return;
+      }
 
-    // Delete existing embeddings
-    await this.deleteEmbeddings(knex, payload.source_table, payload.source_id);
+      // Delete existing embeddings before generating new ones
+      await this.deleteEmbeddings(knex, payload.source_table, payload.source_id);
 
-    // Generate new embeddings
-    const chunks = await this.generateEmbeddings(
-      payload.source_table,
-      payload.source_id,
-      content,
-      payload.schema
-    );
+      // Generate new embeddings
+      const chunks = await this.generateEmbeddings(
+        payload.source_table,
+        payload.source_id,
+        content,
+        payload.schema
+      );
 
-    // Store embeddings
-    await this.storeEmbeddings(knex, chunks);
+      // If no valid chunks generated, log and return (not an error - just empty content)
+      if (chunks.length === 0) {
+        this.logger.info(`No valid embeddings generated for ${payload.source_table}:${payload.source_id} (content may be empty or invalid)`);
+        return;
+      }
 
-    const duration = Date.now() - startTime;
-    this.logger.info(
-      `Successfully processed ${chunks.length} embeddings for ${payload.source_table}:${payload.source_id} in ${duration}ms`
-    );
+      // Store embeddings
+      await this.storeEmbeddings(knex, chunks);
 
-    // Warn if operation took longer than 20 seconds
-    if (duration > 20000) {
-      this.logger.warn(`Slow embedding job: ${duration}ms for ${payload.source_table}:${payload.source_id} (${chunks.length} chunks)`);
+      const duration = Date.now() - startTime;
+      this.logger.info(
+        `Successfully processed ${chunks.length} embeddings for ${payload.source_table}:${payload.source_id} in ${duration}ms`
+      );
+
+      // Warn if operation took longer than 20 seconds
+      if (duration > 20000) {
+        this.logger.warn(`Slow embedding job: ${duration}ms for ${payload.source_table}:${payload.source_id} (${chunks.length} chunks)`);
+      }
+    } catch (error: any) {
+      const duration = Date.now() - startTime;
+
+      // Check if error is validation-related (content issue, not API issue)
+      const isValidationError = error.message?.includes('Invalid') ||
+                               error.message?.includes('empty') ||
+                               error.message?.includes('expected') ||
+                               error.message?.includes('No valid');
+
+      if (isValidationError) {
+        // Validation errors are expected for empty/invalid content - log as warning, not error
+        this.logger.warn({
+          source: `${payload.source_table}:${payload.source_id}`,
+          error: error.message,
+          duration
+        }, 'Embedding job skipped due to validation (empty/invalid content)');
+        // Don't throw - this is expected behavior for empty content
+        return;
+      }
+
+      // Real API/system errors should be logged and thrown for retry
+      this.logger.error({
+        source: `${payload.source_table}:${payload.source_id}`,
+        error: error.message,
+        stack: error.stack,
+        duration
+      }, 'Embedding job failed with API/system error');
+
+      // Re-throw for retry mechanism
+      throw error;
     }
   }
 
@@ -292,17 +330,28 @@ export class EmbeddingQueue extends BaseQueue {
     }> = [];
 
     for (const [field, text] of Object.entries(content)) {
-      if (!text) continue;
+      // Validate text exists and has meaningful content
+      if (!text || typeof text !== 'string') {
+        this.logger.debug({ field, type: typeof text }, 'Skipping non-string field');
+        continue;
+      }
+
+      const trimmedText = text.trim();
+      if (trimmedText.length === 0) {
+        this.logger.debug({ field, originalLength: text.length }, 'Skipping empty text field');
+        continue;
+      }
 
       // Split text into chunks (max ~500 tokens ≈ 2000 chars)
-      const textChunks = this.splitIntoChunks(text, 2000);
+      const textChunks = this.splitIntoChunks(trimmedText, 2000);
 
+      // Only add non-empty chunks
       for (let i = 0; i < textChunks.length; i++) {
         const chunkText = textChunks[i];
-        if (chunkText) {
+        if (chunkText && chunkText.trim().length > 0) {
           allChunks.push({
             field,
-            text: chunkText,
+            text: chunkText.trim(),
             index: i,
             totalChunks: textChunks.length,
           });
@@ -311,8 +360,11 @@ export class EmbeddingQueue extends BaseQueue {
     }
 
     if (allChunks.length === 0) {
+      this.logger.info({ sourceTable, sourceId }, 'No valid text chunks to embed after validation');
       return chunks;
     }
+
+    this.logger.debug({ sourceTable, sourceId, chunkCount: allChunks.length }, 'Generating embeddings for chunks');
 
     // Generate embeddings in smaller batches to prevent timeouts
     const batchSize = 10;
@@ -333,8 +385,13 @@ export class EmbeddingQueue extends BaseQueue {
         for (let j = 0; j < batch.length; j++) {
           const chunk = batch[j];
           const embedding = embeddings[j];
-          if (!chunk || !embedding) continue;
-          
+
+          // Skip if embedding is empty (was filtered in validation)
+          if (!chunk || !embedding || embedding.length === 0) {
+            this.logger.warn({ field: chunk?.field, index: j }, 'Skipping chunk with empty embedding');
+            continue;
+          }
+
           chunks.push({
             source_table: sourceTable,
             source_id: sourceId,
@@ -349,25 +406,49 @@ export class EmbeddingQueue extends BaseQueue {
             },
           });
         }
-      } catch (error) {
-        // Fallback to individual processing if batch fails
-        this.logger.warn(error, 'Batch embedding failed, falling back to individual processing');
-        
+      } catch (error: any) {
+        // Check if error is validation-related (shouldn't retry)
+        const isValidationError = error.message?.includes('Invalid') ||
+                                 error.message?.includes('empty') ||
+                                 error.message?.includes('expected');
+
+        if (isValidationError) {
+          this.logger.warn({
+            error: error.message,
+            batchSize: batch.length,
+            textLengths: texts.map(t => t.length)
+          }, 'Batch validation failed - skipping invalid texts');
+          // Don't retry validation errors - they'll always fail
+          continue;
+        }
+
+        // Fallback to individual processing if batch fails (API error, not validation)
+        this.logger.warn(error, 'Batch embedding API error, falling back to individual processing');
+
         for (const chunk of batch) {
-          const embedding = await this.generateEmbedding(chunk.text);
-          chunks.push({
-            source_table: sourceTable,
-            source_id: sourceId,
-            source_field: chunk.field,
-            chunk_index: chunk.index,
-            chunk_text: chunk.text,
-            embedding: embedding,
-            metadata: {
-              ...metadata,
+          try {
+            const embedding = await this.generateEmbedding(chunk.text);
+            chunks.push({
+              source_table: sourceTable,
+              source_id: sourceId,
+              source_field: chunk.field,
+              chunk_index: chunk.index,
+              chunk_text: chunk.text,
+              embedding: embedding,
+              metadata: {
+                ...metadata,
+                field: chunk.field,
+                chunk_count: chunk.totalChunks,
+              },
+            });
+          } catch (individualError: any) {
+            // Log and skip individual failures (validation errors)
+            this.logger.warn({
               field: chunk.field,
-              chunk_count: chunk.totalChunks,
-            },
-          });
+              error: individualError.message,
+              textLength: chunk.text.length
+            }, 'Failed to generate embedding for individual chunk - skipping');
+          }
         }
       }
     }
@@ -377,27 +458,48 @@ export class EmbeddingQueue extends BaseQueue {
 
   /**
    * Split text into manageable chunks
+   * Validates input and ensures no empty chunks are returned
    */
   private splitIntoChunks(text: string, maxLength: number): string[] {
-    if (text.length <= maxLength) {
-      return [text];
+    // Validate input
+    if (!text || typeof text !== 'string') {
+      this.logger.warn({ textType: typeof text }, 'Invalid text passed to splitIntoChunks');
+      return [];
+    }
+
+    const trimmedText = text.trim();
+    if (trimmedText.length === 0) {
+      return [];
+    }
+
+    // If text fits in one chunk, return it
+    if (trimmedText.length <= maxLength) {
+      return [trimmedText];
     }
 
     const chunks: string[] = [];
-    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+    const sentences = trimmedText.match(/[^.!?]+[.!?]+/g) || [trimmedText];
     let currentChunk = '';
 
     for (const sentence of sentences) {
-      if (currentChunk.length + sentence.length > maxLength && currentChunk) {
-        chunks.push(currentChunk.trim());
-        currentChunk = sentence;
+      const trimmedSentence = sentence.trim();
+      if (!trimmedSentence) continue; // Skip empty sentences
+
+      if (currentChunk.length + trimmedSentence.length > maxLength && currentChunk) {
+        const finalChunk = currentChunk.trim();
+        if (finalChunk.length > 0) {
+          chunks.push(finalChunk);
+        }
+        currentChunk = trimmedSentence;
       } else {
-        currentChunk += ' ' + sentence;
+        currentChunk += (currentChunk ? ' ' : '') + trimmedSentence;
       }
     }
 
-    if (currentChunk.trim()) {
-      chunks.push(currentChunk.trim());
+    // Add final chunk if not empty
+    const finalChunk = currentChunk.trim();
+    if (finalChunk.length > 0) {
+      chunks.push(finalChunk);
     }
 
     return chunks;

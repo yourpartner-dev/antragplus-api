@@ -297,7 +297,7 @@ Raw Content: ${url.content.substring(0, 1500)}`;
       );
 
       // LOG: Context summary for this chat request
-      logger.info('[CHAT STREAM] Starting with context:', {
+      logger.info({
         chat_id: chatId,
         application_id: context.application_id,
         grant_id: context.grant_id,
@@ -306,7 +306,7 @@ Raw Content: ${url.content.substring(0, 1500)}`;
         grant_documents: ragContext.grant_details?.documents?.length || 0,
         requirements_count: ragContext.grant_details?.requirements_matrix?.length || 0,
         user_message_length: latestMessage.content.length
-      });
+      }, '[CHAT STREAM] Starting with context:');
 
       // Build system message for application context
       const systemMessage = this.buildApplicationSystemMessage(ragContext, ephemeralContext);
@@ -574,6 +574,13 @@ Raw Content: ${url.content.substring(0, 1500)}`;
               })}\n\n`);
             }
           } else if (chunk.type === 'finish') {
+            // Clear any remaining thinking state before completion
+            stream.write(`data: ${JSON.stringify({
+              type: 'thinking',
+              message: null,
+              phase: 'complete'
+            })}\n\n`);
+
             // Final completion event
             stream.write(`data: ${JSON.stringify({
               type: 'complete',
@@ -659,6 +666,8 @@ COMMUNICATION STYLE:
 - Be direct and concise - keep responses under 2-3 sentences unless creating documents
 - CRITICAL: After using ANY tool, you MUST respond with a brief summary of what you did or found
 - NEVER use tools silently - always tell the user what you're doing and what you found
+- NEVER end your response with only tool calls - ALWAYS include text explaining what you did
+- If user asks for a summary or information, respond with TEXT ONLY - do not use document tools
 - Use a conversational, helpful tone
 
 YOUR ROLE:

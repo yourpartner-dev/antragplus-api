@@ -27,11 +27,32 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
+    // Validate input type
+    if (!text || typeof text !== 'string') {
+      const error = new Error(`Invalid embedding input: expected string, got ${typeof text}`);
+      logger.error({ textType: typeof text, textValue: text }, error.message);
+      throw error;
+    }
+
+    // Clean and validate text
+    const cleanedText = this.cleanText(text);
+    if (!cleanedText || cleanedText.length === 0) {
+      const error = new Error('Invalid embedding input: text is empty after cleaning');
+      logger.warn({ originalLength: text.length, originalPreview: text.substring(0, 100) }, error.message);
+      throw error;
+    }
+
+    // Truncate to safe token limit (~8191 tokens = ~30000 chars for safety)
+    const truncatedText = cleanedText.substring(0, 30000);
+    if (truncatedText.length < cleanedText.length) {
+      logger.warn(`Text truncated from ${cleanedText.length} to ${truncatedText.length} chars for embedding`);
+    }
+
     try {
       const response = await axios.post(
         `${this.baseUrl}/embeddings`,
         {
-          input: text,
+          input: truncatedText,
           model: this.model,
         },
         {
@@ -39,6 +60,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
             'Authorization': `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json',
           },
+          timeout: 30000, // 30 second timeout
         }
       );
 
@@ -47,19 +69,100 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
       }
 
       return response.data.data[0].embedding;
-    } catch (error) {
-      logger.error(error, 'Error generating embedding:');
+    } catch (error: any) {
+      // Detailed error logging for debugging
+      if (error.response) {
+        logger.error({
+          status: error.response.status,
+          statusText: error.response.statusText,
+          errorData: error.response.data,
+          textLength: truncatedText.length,
+          textPreview: truncatedText.substring(0, 200),
+          model: this.model,
+          baseUrl: this.baseUrl
+        }, 'OpenAI API error generating embedding');
+
+        throw new Error(`OpenAI API ${error.response.status}: ${JSON.stringify(error.response.data)}`);
+      }
+
+      logger.error(error, 'Unexpected error generating embedding');
       throw new Error(`Failed to generate embedding: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
+  /**
+   * Clean text for embedding generation
+   * Removes null bytes, control characters, excessive whitespace
+   */
+  private cleanText(text: string): string {
+    return text
+      .replace(/\0/g, '') // Remove NULL bytes
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove control chars except \n, \r, \t
+      .replace(/\s+/g, ' ') // Collapse multiple spaces
+      .trim();
+  }
+
   async generateBatchEmbeddings(texts: string[]): Promise<number[][]> {
+    // Validate input is array
+    if (!Array.isArray(texts)) {
+      const error = new Error(`Invalid batch input: expected array, got ${typeof texts}`);
+      logger.error({ textsType: typeof texts }, error.message);
+      throw error;
+    }
+
+    if (texts.length === 0) {
+      const error = new Error('Invalid batch input: empty array');
+      logger.warn('Attempted to generate embeddings for empty array');
+      throw error;
+    }
+
+    // Clean and validate all texts, track indices
+    const validTexts: Array<{ index: number; text: string }> = [];
+    const skippedIndices: number[] = [];
+
+    for (let i = 0; i < texts.length; i++) {
+      const text = texts[i];
+
+      if (!text || typeof text !== 'string') {
+        skippedIndices.push(i);
+        logger.warn({ index: i, type: typeof text }, 'Skipping invalid text in batch');
+        continue;
+      }
+
+      const cleanedText = this.cleanText(text);
+      if (!cleanedText || cleanedText.length === 0) {
+        skippedIndices.push(i);
+        logger.warn({ index: i, originalLength: text.length }, 'Skipping empty text after cleaning');
+        continue;
+      }
+
+      // Truncate to safe limit
+      const truncatedText = cleanedText.substring(0, 30000);
+      validTexts.push({ index: i, text: truncatedText });
+    }
+
+    // If no valid texts, throw error
+    if (validTexts.length === 0) {
+      const error = new Error(`No valid texts in batch of ${texts.length} (all empty or invalid)`);
+      logger.error({ totalTexts: texts.length, skippedIndices }, error.message);
+      throw error;
+    }
+
+    // Log if some texts were skipped
+    if (skippedIndices.length > 0) {
+      logger.warn({
+        totalTexts: texts.length,
+        validTexts: validTexts.length,
+        skippedCount: skippedIndices.length,
+        skippedIndices: skippedIndices.slice(0, 10) // Log first 10
+      }, 'Some texts skipped in batch embedding');
+    }
+
     try {
-      // OpenAI supports batch embeddings
       const response = await axios.post(
         `${this.baseUrl}/embeddings`,
         {
-          input: texts,
+          input: validTexts.map(t => t.text),
           model: this.model,
         },
         {
@@ -67,6 +170,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
             'Authorization': `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json',
           },
+          timeout: 60000, // 60 second timeout for batches
         }
       );
 
@@ -74,11 +178,43 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
         throw new Error('Invalid response from OpenAI embeddings API');
       }
 
-      // Sort by index to ensure correct order
+      // Map embeddings back to original indices
+      // OpenAI returns in request order, so we need to handle skipped indices
+      const embeddings: number[][] = new Array(texts.length);
       const sortedData = response.data.data.sort((a: any, b: any) => a.index - b.index);
-      return sortedData.map((item: any) => item.embedding);
-    } catch (error) {
-      logger.error(error, 'Error generating batch embeddings:');
+
+      for (let i = 0; i < sortedData.length; i++) {
+        const originalIndex = validTexts[i]?.index;
+        if (originalIndex !== undefined) {
+          embeddings[originalIndex] = sortedData[i].embedding;
+        }
+      }
+
+      // Fill skipped indices with empty arrays (caller should handle)
+      for (const skippedIndex of skippedIndices) {
+        embeddings[skippedIndex] = [];
+      }
+
+      return embeddings;
+    } catch (error: any) {
+      // Detailed error logging
+      if (error.response) {
+        logger.error({
+          status: error.response.status,
+          statusText: error.response.statusText,
+          errorData: error.response.data,
+          batchSize: validTexts.length,
+          totalRequested: texts.length,
+          skippedCount: skippedIndices.length,
+          textLengths: validTexts.slice(0, 5).map(t => t.text.length), // First 5 lengths
+          model: this.model,
+          baseUrl: this.baseUrl
+        }, 'OpenAI API error generating batch embeddings');
+
+        throw new Error(`OpenAI API ${error.response.status}: ${JSON.stringify(error.response.data)}`);
+      }
+
+      logger.error(error, 'Unexpected error generating batch embeddings');
       throw new Error(`Failed to generate batch embeddings: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
