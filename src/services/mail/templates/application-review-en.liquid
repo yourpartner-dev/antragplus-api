@@ -1,0 +1,41 @@
+{% layout 'base' %} {% block content %}
+
+<h3 style='padding-bottom: 20px; color: rgba(156, 163, 175, 1)'>Your Grant Application Proposal is Ready</h3>
+
+<p style="padding-bottom: 20px">Hello {{ first_name }} {{ last_name }},</p>
+
+<p style='padding-bottom: 30px'>
+  We have prepared a one-pager proposal for your grant application. This document outlines our proposed approach and provides an overview of the application process. Please review the proposal at your convenience.
+</p>
+
+<a
+  class='button'
+  rel='noopener'
+  target='_blank'
+  href='{{application_url}}'
+  style='
+    font-size: 16px;
+    font-weight: 600;
+    color: #ffffff;
+    text-decoration: none;
+    display: inline-block;
+    padding: 11px 24px;
+    border-radius: 8px;
+    background: #171717;
+    border: 1px solid #ffffff;
+  '
+>
+  <!--[if mso]>
+    <i style="letter-spacing: 25px; mso-font-width: -100%; mso-text-raise: 30pt"
+      >&nbsp;</i
+    >
+  <![endif]-->
+  <span style='mso-text-raise: 15pt'>View Proposal</span>
+  <!--[if mso]> <i style="letter-spacing: 25px; mso-font-width: -100%">&nbsp;</i> <![endif]-->
+</a>
+
+<p style='padding-top: 30px'>
+  If you have any questions or need clarification about the proposal, please don't hesitate to reach out to us.
+</p>
+
+{% endblock %}

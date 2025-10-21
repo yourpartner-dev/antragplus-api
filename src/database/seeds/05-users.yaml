@@ -82,4 +82,5 @@ columns:
     references:
       table: yp_organizations
       column: id
+      onDelete: CASCADE
     nullable: true

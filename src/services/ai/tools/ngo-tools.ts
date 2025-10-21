@@ -716,7 +716,7 @@ async function extractFieldValueWithAI(content: string, fieldName: string): Prom
 
     return extracted;
   } catch (error) {
-    logger.warn(`AI extraction failed for ${fieldName}, falling back to regex:`, error);
+    logger.warn(error, `AI extraction failed for ${fieldName}, falling back to regex:`);
     return fallbackExtraction(content, fieldName);
   }
 }
@@ -792,7 +792,7 @@ Just the single word, nothing else.`,
       return 'unknown';
     }
   } catch (error) {
-    logger.warn('Organization type detection failed:', error);
+    logger.warn(error, 'Organization type detection failed');
     return 'unknown';
   }
 }

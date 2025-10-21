@@ -1,0 +1,41 @@
+{% layout 'base' %} {% block content %}
+
+<h3 style='padding-bottom: 20px; color: rgba(156, 163, 175, 1)'>Ihr Förderantragsvorschlag ist bereit</h3>
+
+<p style="padding-bottom: 20px">Hallo {{ first_name }} {{ last_name }},</p>
+
+<p style='padding-bottom: 30px'>
+  Wir haben einen einseitigen Vorschlag für Ihren Förderantrag erstellt. Dieses Dokument beschreibt unseren vorgeschlagenen Ansatz und gibt einen Überblick über den Antragsprozess. Bitte prüfen Sie den Vorschlag zu Ihrer Verfügung.
+</p>
+
+<a
+  class='button'
+  rel='noopener'
+  target='_blank'
+  href='{{application_url}}'
+  style='
+    font-size: 16px;
+    font-weight: 600;
+    color: #ffffff;
+    text-decoration: none;
+    display: inline-block;
+    padding: 11px 24px;
+    border-radius: 8px;
+    background: #171717;
+    border: 1px solid #ffffff;
+  '
+>
+  <!--[if mso]>
+    <i style="letter-spacing: 25px; mso-font-width: -100%; mso-text-raise: 30pt"
+      >&nbsp;</i
+    >
+  <![endif]-->
+  <span style='mso-text-raise: 15pt'>Vorschlag anzeigen</span>
+  <!--[if mso]> <i style="letter-spacing: 25px; mso-font-width: -100%">&nbsp;</i> <![endif]-->
+</a>
+
+<p style='padding-top: 30px'>
+  Wenn Sie Fragen haben oder Klärungsbedarf zum Vorschlag besteht, zögern Sie bitte nicht, uns zu kontaktieren.
+</p>
+
+{% endblock %}

@@ -20,5 +20,7 @@ columns:
     type: json
   validation:
     type: json
+  presets:
+    type: json
   fields:
     type: text

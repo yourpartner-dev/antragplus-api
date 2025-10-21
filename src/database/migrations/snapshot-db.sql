@@ -936,6 +936,7 @@ CREATE TABLE application_content (
 	updated_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	updated_by uuid NULL,
 	metadata jsonb DEFAULT '{}'::jsonb NULL,
+	content_blocks jsonb DEFAULT '[]'::jsonb NULL,
 	CONSTRAINT application_content_pkey PRIMARY KEY (id),
 	CONSTRAINT application_content_application_id_fkey FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
 	CONSTRAINT application_content_ngo_id_fkey FOREIGN KEY (ngo_id) REFERENCES ngos(id) ON DELETE CASCADE
@@ -1009,6 +1010,7 @@ CREATE TABLE application_content_versions (
 	metadata jsonb DEFAULT '{}'::jsonb NULL,
 	created_at timestamptz DEFAULT CURRENT_TIMESTAMP NULL,
 	created_by uuid NULL,
+	content_blocks jsonb DEFAULT '[]'::jsonb NULL,
 	CONSTRAINT application_content_versions_pkey PRIMARY KEY (id),
 	CONSTRAINT application_content_versions_application_content_id_fkey FOREIGN KEY (application_content_id) REFERENCES application_content(id) ON DELETE CASCADE
 );

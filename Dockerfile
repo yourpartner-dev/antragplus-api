@@ -73,5 +73,6 @@ USER app
 # Expose the application port
 EXPOSE 8055
 
-# Start the application with database initialization
-CMD ["sh", "-c", "node dist/cli/run.js bootstrap && node dist/start.js"]
+# Start the application directly (bootstrap should be run separately via Cloud Run job or init container)
+# Note: Run `node dist/cli/run.js bootstrap` as a one-time Cloud Run job before first deployment
+CMD ["node", "dist/start.js"]

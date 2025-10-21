@@ -1,17 +1,25 @@
-import { ErrorCode, isYPError } from '../helpers/errors/index.js';
-import type { PrimaryKey } from '../types/index.js';
+import { ErrorCode, isYPError, ForbiddenError, InvalidPayloadError } from '../helpers/errors/index.js';
+import type { Item, PrimaryKey } from '../types/index.js';
 import express from 'express';
 import { respond } from '../middleware/respond.js';
 import useCollection from '../middleware/use-collection.js';
 import { validateBatch } from '../middleware/validate-batch.js';
 import { MetaService } from '../services/meta.js';
 import { NotificationsService } from '../services/notifications.js';
+import { ItemsService } from '../services/items.js';
+import { UsersService } from '../services/users.js';
 import asyncHandler from '../helpers/utils/async-handler.js';
 import { sanitizeQuery } from '../helpers/utils/sanitize-query.js';
+import { isValidUuid } from '../helpers/utils/is-valid-uuid.js';
+import { useEnv } from '../helpers/env/index.js';
+import { useLogger } from '../helpers/logger/index.js';
 
 const router = express.Router();
+const env = useEnv();
+const logger = useLogger();
 
 router.use(useCollection('yp_notifications'));
+
 
 router.post(
 	'/',
@@ -197,5 +205,152 @@ router.delete(
 	}),
 	respond,
 );
+
+/**
+ * Send notification to all users of an organization for application review
+ * Dynamic endpoint supporting different application statuses
+ * Requires admin access
+ */
+router.post(
+	'/applications/:id/:status/review',
+	asyncHandler(async (req, _res, next) => {
+		const { id: applicationId, status } = req.params;
+
+		// 1. Validate inputs
+		if (!applicationId || !isValidUuid(applicationId)) {
+			throw new InvalidPayloadError({ reason: 'Invalid application ID' });
+		}
+
+		if (!status) {
+			throw new InvalidPayloadError({ reason: 'Status parameter is required' });
+		}
+
+		// 2. Check admin access
+		if (!req.accountability?.admin) {
+			throw new ForbiddenError();
+		}
+
+		// 3. Check if user is authenticated
+		if (!req.accountability?.user) {
+			throw new ForbiddenError();
+		}
+		// Get PUBLIC_URL from environment
+		const publicUrl = env['WEB_APP_URL'];
+		if(!publicUrl) {
+			logger.warn('WEB_APP_URL not set. Not able to send application for review')
+			throw new ForbiddenError();
+		}
+
+		const accountability = req.accountability;
+		const schema = req.schema;
+
+		// 4. Fetch application with NGO relation
+		const applicationsService = new ItemsService('applications', { accountability, schema });
+		const application = await applicationsService.readOne(applicationId, {
+			fields: ['id', 'title', 'ngo_id.organization_id']
+		});
+
+		const organizationId = application['ngo_id']?.organization_id;
+		if (!organizationId) {
+			throw new InvalidPayloadError({ reason: 'Application NGO has no organization' });
+		}
+
+		// 5. Fetch all active users in this organization with email notifications enabled
+		const usersService = new UsersService({ schema });
+		const users: Item[] = await usersService.readByQuery({
+			filter: {
+				organization_id: { _eq: organizationId },
+				email_notifications: { _eq: true },
+				status: { _eq: 'active' }
+			},
+			fields: ['id']
+		});
+
+		// 6. Create notifications for each user
+		const notificationsService = new NotificationsService({ accountability, schema });	
+
+		for (const user of users) {
+			await notificationsService.createOne(
+				{
+					recipient: user['id'],
+					sender: req.accountability.user as string,
+					subject: `Application Ready for Review`,
+					message: `An application titled "${application['title'] || 'Untitled Application'}" is ready for your review.`,
+					collection: 'applications',
+					item: applicationId,
+					params: {
+						application_url: `${publicUrl}/home/applications/${applicationId}`,
+					}
+				},
+				undefined,
+				'application-review' // Custom template name
+			);
+
+		}
+
+		return next();
+	}),
+	respond
+);
+
+/**
+ * Accept proposal notification
+ * User accepts a proposal and notifies the application creator
+ */
+router.post(
+	'/proposal/:applicationId/accept',
+	asyncHandler(async (req, _res, next) => {
+		const { applicationId } = req.params;
+
+		// 1. Validate application ID
+		if (!applicationId || !isValidUuid(applicationId)) {
+			throw new InvalidPayloadError({ reason: 'Invalid application ID' });
+		}
+
+		// 2. Check if user is authenticated
+		if (!req.accountability?.user) {
+			throw new ForbiddenError();
+		}
+
+		// Get PUBLIC_URL from environment
+		const publicUrl = env['WEB_APP_URL'];
+		if(!publicUrl) {
+			logger.warn('WEB_APP_URL not set. Not able to send proposal acceptance notification')
+			throw new ForbiddenError();
+		}
+
+		const schema = req.schema;
+
+		// 3. Fetch application with created_by user info
+		const applicationsService = new ItemsService('applications', { schema, accountability: null });
+		const application: Item = await applicationsService.readOne(applicationId, {
+			fields: ['id', 'title', 'created_by']
+		});
+
+		// 4. Create notification for the creator
+		const notificationsService = new NotificationsService({ schema, accountability: null });
+
+		await notificationsService.createOne(
+			{
+				recipient: application['created_by'],
+				sender: req.accountability.user as string,
+				subject: `Proposal Accepted`,
+				message: `Your proposal for "${application['title'] || 'Untitled Application'}" has been accepted.`,
+				collection: 'applications',
+				item: applicationId,
+				params: {
+					application_title: application['title'] || 'Untitled Application',
+					application_url: `${publicUrl}/dashboard/applications/${applicationId}`,
+				}
+			},
+			undefined,
+			'proposal-accepted' // Custom template name
+		);
+
+		return next();
+	}),
+	respond
+);
+
 
 export default router;

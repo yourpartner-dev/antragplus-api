@@ -25,6 +25,8 @@ type TableSeed = {
 			references?: {
 				table: string;
 				column: string;
+				onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION';
+				onUpdate?: 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION';
 			};
 		};
 	};
@@ -100,7 +102,7 @@ export default async function runSeed(database: Knex): Promise<void> {
 				if (columnInfo.type === 'uuid' && columnInfo.primary && columnInfo.default === undefined) {
 					column.defaultTo(database.raw('gen_random_uuid()'));
 				}
-				
+
 				// Auto-add defaults for common timestamp fields
 				if (columnInfo.type === 'timestamp' && columnInfo.default === undefined) {
 					// created_at and date_created should default to CURRENT_TIMESTAMP
@@ -112,7 +114,7 @@ export default async function runSeed(database: Knex): Promise<void> {
 						column.defaultTo(database.fn.now());
 					}
 				}
-				
+
 				// Handle explicit defaults
 				if (columnInfo.default !== undefined) {
 					let defaultValue = columnInfo.default;
@@ -137,7 +139,9 @@ export default async function runSeed(database: Knex): Promise<void> {
 				}
 
 				if (columnInfo.references) {
-					column.references(columnInfo.references.column).inTable(columnInfo.references.table);
+					const ref = column.references(columnInfo.references.column).inTable(columnInfo.references.table);
+					if (columnInfo.references.onDelete) ref.onDelete(columnInfo.references.onDelete);
+					if (columnInfo.references.onUpdate) ref.onUpdate(columnInfo.references.onUpdate);
 				}
 			}
 		});

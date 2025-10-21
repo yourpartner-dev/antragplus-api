@@ -26,11 +26,13 @@ columns:
     references:
       table: yp_folders
       column: id
+      onDelete: CASCADE
   uploaded_by:
     type: uuid
     references:
       table: yp_users
       column: id
+      onDelete: SET NULL
   uploaded_on:
     type: timestamp
     nullable: false
@@ -40,6 +42,7 @@ columns:
     references:
       table: yp_users
       column: id
+      onDelete: SET NULL
   modified_on:
     type: timestamp
     nullable: false
@@ -78,3 +81,4 @@ columns:
     references:
       table: yp_organizations
       column: id
+      onDelete: CASCADE
