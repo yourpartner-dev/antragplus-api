@@ -12,7 +12,7 @@ const logger = useLogger();
 /**
  * Helper function to create a version record for document changes
  */
-async function createVersion(
+export async function createVersion(
   documentId: string,
   content: string,
   contentBlocks: any[] | null,
@@ -51,6 +51,7 @@ async function createVersion(
     changes: { description: changeDescription },
     created_by: userId,
     created_at: new Date(),
+    metadata: { current: true }, // Mark this as the current version
   });
 
   return nextVersion;
@@ -117,15 +118,17 @@ export function getChatTools(options: {
         // Read back the full document object to return complete data
         const document = await service.readOne(documentId as string);
 
-        // LOG: Document after creation
-        logger.info('[CREATE DOC] Document created:', {
-          id: documentId,
-          title: document['title'],
-          content_length: document['content']?.length,
-          kind: document['kind'],
-          created_at: document['created_at']
-        });
-
+        // Create initial version (v1) with the created content
+        await createVersion(
+          documentId as string,
+          content,
+          [],
+          'Initial document creation',
+          userId,
+          accountability,
+          schema
+        );
+        
         return {
           success: true,
           document: {
@@ -150,16 +153,6 @@ export function getChatTools(options: {
         change_description: z.string().optional().describe('Description of changes made'),
       }),
       execute: async ({ document_id, document_title, content, title, change_description }) => {
-        // LOG 1: What AI provided
-        logger.info({
-          document_id,
-          document_title,
-          content_length: content?.length,
-          content_preview: content?.substring(0, 200),
-          title_change: title,
-          change_description
-        }, '[UPDATE DOC] AI provided args:');
-
         if (!userId) {
           throw new Error('User must be authenticated to update documents');
         }
@@ -229,28 +222,8 @@ export function getChatTools(options: {
           };
         }
 
-        // Read CURRENT document BEFORE making any changes (to capture OLD content)
+        // Read CURRENT document BEFORE making any changes
         const currentDocument = await service.readOne(document_id);
-
-        // LOG 2: Current document state before update
-        logger.info({
-          id: document_id,
-          title: currentDocument['title'],
-          content_length: currentDocument['content']?.length,
-          content_preview: currentDocument['content']?.substring(0, 200),
-          content_blocks_count: currentDocument['content_blocks']?.length || 0
-        }, '[UPDATE DOC] Current document state:');
-
-        // Create version with OLD/CURRENT content (snapshot before change)
-        const versionNumber = await createVersion(
-          document_id,
-          currentDocument['content'],
-          currentDocument['content_blocks'],
-          change_description || 'Document updated',
-          userId,
-          accountability,
-          schema
-        );
 
         // Build updates with NEW content
         const updates: any = {
@@ -261,6 +234,13 @@ export function getChatTools(options: {
         if (content) {
           updates.content = content;
           updates.content_blocks = [];  // Clear blocks - frontend will regenerate from content
+
+          // Recalculate metadata word_count and character_count
+          updates.metadata = {
+            ...currentDocument['metadata'],
+            word_count: content.split(/\s+/).filter(word => word.length > 0).length,
+            character_count: content.length
+          };
         }
         if (title) updates.title = title;
 
@@ -273,11 +253,22 @@ export function getChatTools(options: {
           content_blocks_cleared: updates.content_blocks?.length === 0
         }, '[UPDATE DOC] Update payload:');
 
-        // Update application_content with NEW content
+        // Update application_content with NEW content FIRST
         await service.updateOne(document_id, updates, {});
 
-        // Read the updated document to return full object with NEW content
+        // Read the updated document to get the NEW content
         const document = await service.readOne(document_id);
+
+        // Create version with NEW content (what user sees now) - stores n versions
+        const versionNumber = await createVersion(
+          document_id,
+          document['content'], // NEW content that was just saved
+          document['content_blocks'], // NEW blocks
+          change_description || 'Document updated',
+          userId,
+          accountability,
+          schema
+        );
 
         // LOG 4: Document after save (verify what's in database)
         logger.info({
@@ -415,7 +406,7 @@ export function getChatTools(options: {
 
         const versionToRestore = versions[0] as any;
 
-        // Update the application_content with version content
+        // Update the application_content with restored content
         const service = new ItemsService('application_content', { accountability, schema });
         await service.updateOne(document_id, {
           content: versionToRestore.content,
@@ -424,14 +415,14 @@ export function getChatTools(options: {
           updated_by: userId,
         });
 
-        // Read updated document
+        // Read updated document to get the actual restored state
         const document = await service.readOne(document_id);
 
-        // Create a new version for the restoration
+        // Create a new version with the restored content (follows n-version pattern)
         const newVersionNumber = await createVersion(
           document_id,
-          versionToRestore.content,
-          versionToRestore.content_blocks,
+          document['content'], // Use actual content from database
+          document['content_blocks'], // Use actual blocks from database
           `Restored to version ${version_number}`,
           userId,
           accountability,

@@ -84,3 +84,14 @@ export const getMessagesSchema = Joi.object({
   offset: Joi.number().integer().min(0).default(0),
   order: Joi.string().valid('asc', 'desc').default('asc'),
 });
+
+// Schema for accepting inline rewrite suggestions
+// Note: original_text should be the MARKDOWN substring (not plain text)
+// Frontend extracts markdown substring, backend does exact string replacement
+export const acceptRewriteSchema = Joi.object({
+  document_id: Joi.string().uuid().required(),
+  original_text: Joi.string().min(1).required().description('Markdown substring from document source'),
+  suggested_text: Joi.string().min(1).required().description('Plain text replacement (AI-generated)'),
+  chat_id: Joi.string().uuid().optional().description('For audit trail'),
+  change_description: Joi.string().optional(),
+});

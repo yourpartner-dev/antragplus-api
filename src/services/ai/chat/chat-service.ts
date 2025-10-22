@@ -296,18 +296,6 @@ Raw Content: ${url.content.substring(0, 1500)}`;
         }
       );
 
-      // LOG: Context summary for this chat request
-      logger.info({
-        chat_id: chatId,
-        application_id: context.application_id,
-        grant_id: context.grant_id,
-        ngo_id: context.ngo_id,
-        existing_documents: ragContext.application_status?.existing_content?.length || 0,
-        grant_documents: ragContext.grant_details?.documents?.length || 0,
-        requirements_count: ragContext.grant_details?.requirements_matrix?.length || 0,
-        user_message_length: latestMessage.content.length
-      }, '[CHAT STREAM] Starting with context:');
-
       // Build system message for application context
       const systemMessage = this.buildApplicationSystemMessage(ragContext, ephemeralContext);
 
@@ -317,16 +305,18 @@ Raw Content: ${url.content.substring(0, 1500)}`;
         ...messages,
       ];
 
-      // Store user message
-      await this.addMessage(
-        chatId,
-        {
-          content: latestMessage.content,
-          role: 'user',
-          metadata: { context: context || {} },
-        },
-        this.accountability?.user || null
-      );
+      // Store user message (skip if ephemeral request)
+      if (!ephemeralContext?.is_ephemeral_request) {
+        await this.addMessage(
+          chatId,
+          {
+            content: latestMessage.content,
+            role: 'user',
+            metadata: { context: context || {} },
+          },
+          this.accountability?.user || null
+        );
+      }
 
       // Get application-specific tools
       const tools = getChatTools({
@@ -354,8 +344,8 @@ Raw Content: ${url.content.substring(0, 1500)}`;
         toolChoice: 'auto', // Let the model decide when to use tools
         stopWhen: stepCountIs(50), // Allow up to 50 steps for complex multi-tool operations
         onStepFinish: async (step) => {
-          // Save each step as a separate message (multi-step responses broken into parts)
-          if (step.text && step.text.trim().length > 0) {
+          // Save each step as a separate message (skip if ephemeral request)
+          if (!ephemeralContext?.is_ephemeral_request && step.text && step.text.trim().length > 0) {
             await this.addMessage(
               chatId,
               {
@@ -658,6 +648,28 @@ Raw Content: ${url.content.substring(0, 1500)}`;
    * Build system message specifically for application context (NEW - replaces buildSystemMessage)
    */
   private buildApplicationSystemMessage(ragContext: any, ephemeralContext?: any): string {
+    // Check if this is an ephemeral inline-edit request
+    if (ephemeralContext?.is_ephemeral_request && ephemeralContext?.operation_type === 'text_rewrite') {
+      return `You are an AI writing assistant for grant applications in AntragPlus.
+
+TASK: Rewrite the highlighted text according to the user's instruction.
+
+${ephemeralContext.document_metadata ? `
+DOCUMENT CONTEXT:
+- Document: "${ephemeralContext.document_metadata.title}"
+- Document Type: ${ephemeralContext.document_metadata.kind || 'text'}
+- Document ID: ${ephemeralContext.document_metadata.id}
+` : ''}
+
+INSTRUCTIONS:
+- Provide ONLY the rewritten text
+- Maintain consistency with the document's tone and style
+- Match the formality and language register expected for grant applications
+- Do not add explanations, preamble, or markdown formatting unless specifically requested
+- If the instruction is unclear, make reasonable assumptions based on grant writing best practices`;
+    }
+
+    // Regular chat mode
     const hasExistingDocuments = ragContext.application_status?.existing_content?.length > 0;
 
     let systemMessage = `You are an AI assistant for grant application creation in AntragPlus.

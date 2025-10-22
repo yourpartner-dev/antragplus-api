@@ -97,8 +97,7 @@ export class EnhancedRAGService extends RAGService {
     } = options;
 
     try {
-      logger.info(`Building grant application context for: "${query}"`);
-
+      
       // 1. Build internal context using existing RAG
       const ragOptions: RAGSearchOptions = {
         limit: 15,

@@ -332,4 +332,83 @@ router.post(
   respond
 );
 
+/**
+ * Rewrite text snippet with AI (ephemeral, no chat history)
+ * POST /api/ai/chat/rewrite
+ * Body: { chat_id, original_text, instruction, context?, temperature? }
+ */
+router.post(
+  '/rewrite',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { chat_id, original_text, instruction, context, temperature } = req.body;
+
+    // Validation
+    if (!chat_id || !original_text || !instruction) {
+      throw new InvalidPayloadError({
+        reason: 'chat_id, original_text and instruction are required'
+      });
+    }
+
+    if (!req.accountability?.user || !req.accountability?.admin) {
+      throw new ForbiddenError();
+    }
+
+    if (!isValidUuid(chat_id)) {
+      throw new InvalidPayloadError({ reason: "Chat ID not valid" });
+    }
+
+    // Set headers for Server-Sent Events (SSE)
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable Nginx buffering
+
+    const service = new ChatService({
+      accountability: req.accountability as Accountability,
+      schema: req.schema as SchemaOverview,
+    });
+
+    // Build focused rewrite prompt
+    const rewritePrompt = `You are a professional text editor. Your task is to rewrite the following text according to the user's instruction.
+
+Original text:
+"${original_text}"
+
+User instruction:
+"${instruction}"
+
+${context?.document_id ? 'Context: This is part of a grant application document.' : ''}
+
+Provide ONLY the rewritten text. Do not include explanations, comments, or markdown formatting unless specifically requested.`;
+
+    // Create ephemeral context so this isn't saved to chat history
+    const ephemeralContext = {
+      is_ephemeral_request: true, // KEY FLAG to prevent saving to database
+      operation_type: 'text_rewrite',
+      original_text,
+      instruction,
+      // Include document metadata if provided
+      document_metadata: context?.document_id ? {
+        id: context.document_id,
+        title: context.document_title,
+        kind: context.document_kind
+      } : undefined
+    };
+
+    // Stream the rewrite using the chat service streaming method
+    await service.streamChatResponse({
+      chatId: chat_id,
+      messages: [
+        { role: 'user', content: rewritePrompt }
+      ],
+      context: context || {},
+      temperature: temperature || 0.3, // Lower temperature for focused rewrites
+      stream: res,
+      ephemeralContext, // Marks as ephemeral - won't save to chat history
+    });
+
+    res.end();
+  })
+);
+
 export default router;
