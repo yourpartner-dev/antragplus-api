@@ -40,3 +40,4 @@ export const bulkResolveSuggestionsSchema = Joi.object({
     .valid('accepted', 'rejected')
     .required(),
 });
+

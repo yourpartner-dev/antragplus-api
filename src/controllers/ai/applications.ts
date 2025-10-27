@@ -8,10 +8,12 @@ import type { Accountability } from '../../types/accountability.js';
 import type { SchemaOverview } from '../../types/schema.js';
 import { ForbiddenError, InvalidPayloadError } from '../../helpers/errors/index.js';
 import { isValidUuid } from '../../helpers/utils/is-valid-uuid.js';
+import { createVersion } from '../../services/ai/tools/chat-tools.js';
+import { createContentVersionSchema } from './schemas/applications.schema.js';
 
 const router = express.Router();
 
-/**
+/** 
  * Generate complete application documents with streaming response
  * This endpoint analyzes the grant and NGO, then generates all required documents
  * Compatible with Server-Sent Events (SSE) for real-time progress updates
@@ -216,6 +218,93 @@ router.post(
 
     return next();
   })
+);
+
+/**
+ * Manually create a version of application content
+ * Used when users manually edit content on the frontend and want to save a version
+ */
+router.post(
+  '/content/create-version',
+  asyncHandler(async (req: Request, res: Response, next) => {
+
+    // Validate request body
+    const { error, value } = createContentVersionSchema.validate(req.body);
+
+    if (error) {
+      throw new InvalidPayloadError({ reason: error.details?.[0]?.message || 'Invalid request payload' });
+    }
+
+    const { application_id, content_id, change_description, content, content_blocks } = value;
+
+    // Validate IDs
+    if (!application_id || !isValidUuid(application_id)) {
+      throw new InvalidPayloadError({ reason: 'Application ID missing or not valid' });
+    }
+
+    if (!content_id || !isValidUuid(content_id)) {
+      throw new InvalidPayloadError({ reason: 'Document ID missing or not valid' });
+    }
+
+    // Ensure user is authenticated
+    if (!req.accountability?.user) {
+      throw new ForbiddenError();
+    }
+
+    const accountability = req.accountability as Accountability;
+    const schema = req.schema as SchemaOverview;
+    const userId = accountability.user as string;
+
+    // Verify document exists and belongs to this application
+    const contentService = new ItemsService('application_content', { accountability, schema });
+    const document = await contentService.readOne(content_id);
+
+    // Verify document belongs to this application
+    if (document['application_id'] !== application_id) {
+      throw new ForbiddenError();
+    }
+
+    // If content is provided, update the document first
+    if (content) {
+      const updates: any = {
+        content,
+        updated_at: new Date(),
+        updated_by: userId,
+      };
+
+      // Update content_blocks if provided
+      if (content_blocks !== undefined) {
+        updates.content_blocks = content_blocks || [];
+      }
+
+      // Recalculate metadata
+      updates.metadata = {
+        ...document['metadata'],
+        word_count: content.split(/\s+/).filter((word: string) => word.length > 0).length,
+        character_count: content.length
+      };
+
+      await contentService.updateOne(content_id, updates);
+    }
+
+    // Read the current document state (either just updated or existing)
+    const currentDocument = await contentService.readOne(content_id);
+
+    // Create version with current state
+    await createVersion(
+      content_id,
+      currentDocument['content'],
+      currentDocument['content_blocks'] || [],
+      change_description,
+      userId,
+      accountability,
+      schema
+    );
+
+    res.locals['payload'] = { data: currentDocument };
+    return next();
+  }),
+  respond
 );
 
 export default router;

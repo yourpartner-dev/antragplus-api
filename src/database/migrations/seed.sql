@@ -580,3 +580,28 @@ CREATE INDEX idx_grant_extraction_queue_status ON grant_extraction_queue(status)
 CREATE INDEX idx_grant_extraction_queue_created ON grant_extraction_queue(created_at);
 
 COMMENT ON TABLE grant_extraction_queue IS 'Queue for processing grant document uploads in batches. Tracks individual file processing status and aggregates results when all files in a batch are complete.';
+
+-- ============================================
+-- Column Comments for Documentation
+-- ============================================
+
+-- Grants table column comments
+COMMENT ON COLUMN grants.category IS 'Education, Healthcare, Environment, etc. (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN grants.type IS 'Project-based, Operating, Capacity Building, etc. (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN grants.location IS 'Geographic location where NGO should be (e.g. specific region in Germany or EU)';
+COMMENT ON COLUMN grants.reference_number IS 'Official reference number for documentation and reference (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN grants.contact_person IS 'Person responsible for this grant (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN grants.contact_number IS 'Phone number of responsible person (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN grants.contact_email IS 'Email of reference person (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN grants.company_size IS 'Size of companies that can apply (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN grants.funding_frequency IS 'How often they fund NGOs (Updated to TEXT for AI flexibility)';
+COMMENT ON COLUMN grants.decision_timeline IS 'When they will likely make a decision';
+COMMENT ON COLUMN grants.year_of_program_establishment IS 'When the grant program was established';
+
+-- Applications table column comments
+COMMENT ON COLUMN applications.status IS 'Application lifecycle status: draft, proposal, generated, sent for review, submitted, won, lost';
+
+-- Grant Matches table column comments
+COMMENT ON COLUMN grant_matches.matching_points IS 'Array of specific points explaining why this grant matches the NGO';
+COMMENT ON COLUMN grant_matches.missing_points IS 'Array of specific requirements or criteria that the NGO is missing for this grant';
+COMMENT ON COLUMN grant_matches.suggestions IS 'Array of actionable suggestions to improve the NGO''s eligibility for this grant';

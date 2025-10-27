@@ -23,6 +23,7 @@ pnpm-workspace.yaml
 # Dotenv configs
 .env
 .env.QA
+.env.QA.OLD
 .env.cloudrun.yaml
 antragplus-472111-309366383e4e.json
 

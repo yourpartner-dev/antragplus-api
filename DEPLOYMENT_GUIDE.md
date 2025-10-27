@@ -63,6 +63,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
     --port 8055 \
     --memory 4Gi \
     --cpu 4 \
+    --timeout 1800 \
     --env-vars-file .env.cloudrun.yaml \
     --network default \
     --subnet default \
